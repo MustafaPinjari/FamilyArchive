@@ -19,6 +19,25 @@ export async function GET(
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
     }
 
+    // Direct Data URI download (100% resilient across stateless serverless Netlify containers)
+    if (doc.file_path && doc.file_path.startsWith("data:")) {
+      const match = doc.file_path.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const fileBuffer = Buffer.from(match[2], "base64");
+        const ext = mimeType.includes("pdf") ? "pdf" : mimeType.includes("jpeg") ? "jpg" : mimeType.includes("png") ? "png" : "bin";
+        const downloadFilename = doc.name.endsWith(`.${ext}`) ? doc.name : `${doc.name}.${ext}`;
+        return new Response(fileBuffer, {
+          headers: {
+            "Content-Type": mimeType || doc.file_type || "application/octet-stream",
+            "Content-Disposition": `attachment; filename="${encodeURIComponent(downloadFilename)}"`,
+            "Content-Length": fileBuffer.length.toString(),
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+    }
+
     // Google Drive direct download streaming
     if (doc.file_path && doc.file_path.startsWith("gdrive:")) {
       const gdriveFileId = doc.file_path.replace("gdrive:", "");

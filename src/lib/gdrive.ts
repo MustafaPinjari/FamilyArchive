@@ -128,6 +128,61 @@ export function getDriveClient() {
   );
 }
 
+/**
+ * Resolves the target Google Drive folder for a given person.
+ * Searches for person-specific subfolders (e.g., 'Akhtar > akhtar', 'Mukhtar > Mustafa', 'Shakur > Eram').
+ * Falls back to root folder if no match is found.
+ */
+export async function resolvePersonFolderId(personName: string, personId: string): Promise<string> {
+  const config = getGoogleDriveConfig();
+  if (!config.folderId) return "";
+
+  try {
+    const drive = getDriveClient();
+    const cleanName = personName.trim().toLowerCase();
+    const cleanId = personId.trim().toLowerCase();
+
+    // 1. List all folders inside root
+    const rootRes = await drive.files.list({
+      q: `'${config.folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: "files(id, name)",
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    const rootFolders = rootRes.data.files || [];
+
+    // Check if one of the root folders directly matches
+    for (const rf of rootFolders) {
+      const rfLower = rf.name?.toLowerCase() || "";
+      if (rfLower === cleanName || rfLower === cleanId) {
+        return rf.id || config.folderId;
+      }
+    }
+
+    // 2. Search 1 level deeper inside branch folders (Akhtar, Shakur, Sattar, Mukhtar)
+    for (const rf of rootFolders) {
+      if (!rf.id) continue;
+      const subRes = await drive.files.list({
+        q: `'${rf.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: "files(id, name)",
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+      const subFolders = subRes.data.files || [];
+      for (const sf of subFolders) {
+        const sfLower = sf.name?.toLowerCase() || "";
+        if (sfLower === cleanName || sfLower === cleanId) {
+          return sf.id || config.folderId;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not resolve person subfolder in Google Drive:", err);
+  }
+
+  return config.folderId || "";
+}
+
 export async function uploadFileToDrive({
   filename,
   mimeType,

@@ -19,6 +19,24 @@ export async function GET(
       return NextResponse.json({ error: "Document not found." }, { status: 404 });
     }
 
+    // Direct Data URI preview (100% resilient across stateless serverless Netlify containers)
+    if (doc.file_path && doc.file_path.startsWith("data:")) {
+      const match = doc.file_path.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) {
+        const mimeType = match[1];
+        const fileBuffer = Buffer.from(match[2], "base64");
+        return new Response(fileBuffer, {
+          headers: {
+            "Content-Type": mimeType || doc.file_type || "application/octet-stream",
+            "Content-Disposition": `inline; filename="${encodeURIComponent(doc.name)}"`,
+            "Content-Length": fileBuffer.length.toString(),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "public, max-age=86400",
+          },
+        });
+      }
+    }
+
     // Google Drive direct streaming (inline preview without visiting Google Drive)
     if (doc.file_path && doc.file_path.startsWith("gdrive:")) {
       const gdriveFileId = doc.file_path.replace("gdrive:", "");

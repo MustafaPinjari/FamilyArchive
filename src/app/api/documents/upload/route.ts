@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { isGoogleDriveConfigured, uploadFileToDrive } from "@/lib/gdrive";
+import { isGoogleDriveConfigured, uploadFileToDrive, resolvePersonFolderId } from "@/lib/gdrive";
 
 export async function POST(request: Request) {
   try {
@@ -104,20 +104,31 @@ export async function POST(request: Request) {
 
       if (driveReady) {
         try {
+          // 1. Target person's specific subfolder in Google Drive (e.g. Akhtar > akhtar)
+          const targetFolderId = await resolvePersonFolderId(member.first_name, personId);
+
           const driveResult = await uploadFileToDrive({
             filename: `${docId}-${sanitizedFilename}`,
             mimeType: file.type || "application/octet-stream",
             buffer,
+            folderId: targetFolderId || undefined,
           });
           storedPath = `gdrive:${driveResult.id}`;
         } catch (driveErr) {
-          console.error("Google Drive upload failed, falling back to local vault:", driveErr);
-          fs.writeFileSync(targetFilePath, buffer);
-          storedPath = storedFileName;
+          console.warn("Google Drive upload quota/permission restricted, storing inline in archive vault:", driveErr);
+          // Store directly as Data URI: 100% resilient across stateless serverless Netlify containers
+          const mime = file.type || "application/octet-stream";
+          storedPath = `data:${mime};base64,${buffer.toString("base64")}`;
+          try {
+            fs.writeFileSync(targetFilePath, buffer);
+          } catch {}
         }
       } else {
-        fs.writeFileSync(targetFilePath, buffer);
-        storedPath = storedFileName;
+        const mime = file.type || "application/octet-stream";
+        storedPath = `data:${mime};base64,${buffer.toString("base64")}`;
+        try {
+          fs.writeFileSync(targetFilePath, buffer);
+        } catch {}
       }
 
       // Determine document display name
