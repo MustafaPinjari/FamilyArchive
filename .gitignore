@@ -32,6 +32,16 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+
+# Service Account & Private Keys (CRITICAL SECURITY)
+service-account*.json
+*.key.json
+
+# Local SQLite Database & Storage Vault
+/data/*.db*
+/data/vault/
+/data/photos/
 
 # vercel
 .vercel
