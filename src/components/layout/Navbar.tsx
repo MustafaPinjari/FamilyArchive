@@ -104,7 +104,7 @@ export function Navbar({ initialUser }: NavbarProps) {
             <div className="flex items-center gap-2">
               <button
                 onClick={toggleLanguage}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100/70 hover:bg-amber-200/80 text-amber-950 border border-amber-300 transition-colors cursor-pointer min-h-[36px]"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100/80 hover:bg-amber-200 text-amber-950 border border-amber-300 transition-colors cursor-pointer min-h-[38px]"
                 title="Switch Language / भाषा बदलें"
               >
                 <Globe className="w-3.5 h-3.5 text-amber-800" />
@@ -115,14 +115,14 @@ export function Navbar({ initialUser }: NavbarProps) {
                 <div className="flex items-center gap-1.5 pl-1.5 border-l border-stone-200">
                   <a
                     href="/admin"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition-colors min-h-[36px]"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition-colors min-h-[38px]"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
                     <span>Admin</span>
                   </a>
                   <button
                     onClick={handleLogout}
-                    className="p-2 rounded-xl text-stone-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                    className="p-2 rounded-xl text-stone-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer min-h-[38px] min-w-[38px] flex items-center justify-center"
                     title="Sign Out"
                   >
                     <LogOut className="w-3.5 h-3.5" />
@@ -131,11 +131,11 @@ export function Navbar({ initialUser }: NavbarProps) {
               ) : (
                 <a
                   href="/login"
-                  className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-xl text-stone-600 hover:text-stone-900 hover:bg-stone-200/50 text-xs font-medium transition-colors min-h-[36px]"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition-colors min-h-[38px] shadow-2xs"
                   title="Family Administrator Sign In"
                 >
-                  <Lock className="w-3.5 h-3.5 text-stone-400" />
-                  <span>Admin</span>
+                  <Lock className="w-3.5 h-3.5 text-amber-300" />
+                  <span>{language === "hi" ? "व्यवस्थापक" : "Admin"}</span>
                 </a>
               )}
             </div>
@@ -143,7 +143,7 @@ export function Navbar({ initialUser }: NavbarProps) {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar (Fitts's Law: 48px+ Touch Areas) */}
+      {/* Mobile Bottom Navigation Bar (Fitts's Law: 48px+ Touch Areas with 5 clear tabs) */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90 shadow-lg px-2 py-1 flex items-center justify-around">
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -166,6 +166,25 @@ export function Navbar({ initialUser }: NavbarProps) {
             </a>
           );
         })}
+
+        {/* Dedicated Admin Tab on Mobile Bottom Bar */}
+        <a
+          href={isAdmin ? "/admin" : "/login"}
+          className={`flex-1 flex flex-col items-center justify-center py-2 px-1 min-h-[50px] rounded-xl transition-colors ${
+            pathname.startsWith("/admin") || pathname.startsWith("/login")
+              ? "text-amber-900 font-bold"
+              : "text-stone-500 hover:text-stone-900 font-medium"
+          }`}
+        >
+          {isAdmin ? (
+            <ShieldCheck className="w-5 h-5 text-amber-700" />
+          ) : (
+            <Lock className="w-5 h-5 text-stone-500" />
+          )}
+          <span className="text-[11px] mt-0.5 tracking-tight">
+            {isAdmin ? "Admin" : (language === "hi" ? "एडमिन" : "Admin")}
+          </span>
+        </a>
       </nav>
     </>
   );

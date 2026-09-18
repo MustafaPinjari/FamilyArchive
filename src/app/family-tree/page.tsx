@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth/session";
 import { Navbar } from "@/components/layout/Navbar";
 import { getDb } from "@/lib/db";
+import { seedDocuments } from "@/lib/db/seed";
 import { computeFamilyTreeLayout } from "@/lib/tree-layout";
 import { FamilyMember, Marriage, Relationship } from "@/types";
 import { TreePageClient } from "./TreePageClient";
@@ -17,9 +18,18 @@ export default async function FamilyTreePage() {
   const relationships = db.prepare("SELECT * FROM relationships").all() as Relationship[];
 
   // Document counts
-  const docCountRows = db
+  let docCountRows = db
     .prepare("SELECT person_id, count(*) as count FROM documents GROUP BY person_id")
     .all() as { person_id: string; count: number }[];
+
+  // Resilience: Auto-seed on fresh serverless cold-starts
+  if (docCountRows.length === 0) {
+    seedDocuments(db);
+    docCountRows = db
+      .prepare("SELECT person_id, count(*) as count FROM documents GROUP BY person_id")
+      .all() as { person_id: string; count: number }[];
+  }
+
   const docCounts: Record<string, number> = {};
   for (const r of docCountRows) {
     docCounts[r.person_id] = r.count;

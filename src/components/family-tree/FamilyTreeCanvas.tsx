@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   ZoomIn,
   ZoomOut,
@@ -15,9 +15,139 @@ import {
   ChevronDown,
   ChevronRight,
   User as UserIcon,
+  X,
+  Compass,
 } from "lucide-react";
 import { TreeLayoutResult, TreeNode, TreeEdge } from "@/lib/tree-layout";
 import { FamilyMember } from "@/types";
+import { useLanguage } from "@/lib/i18n";
+
+interface GrandchildItem {
+  id: string;
+  name: string;
+}
+
+interface ChildItem {
+  id: string;
+  name: string;
+  spouse?: { id: string; name: string };
+  children?: GrandchildItem[];
+}
+
+interface BranchItem {
+  id: string;
+  name: string;
+  nickname?: string;
+  isLead?: boolean;
+  spouse?: { id: string; name: string };
+  children: ChildItem[];
+}
+
+const BRANCHES_STRUCTURE: BranchItem[] = [
+  {
+    id: "akhtar",
+    name: "Akhtar",
+    nickname: "Bade Pappa",
+    isLead: true,
+    spouse: { id: "afroz", name: "Afroz" },
+    children: [
+      {
+        id: "naziya",
+        name: "Naziya",
+        spouse: { id: "azhar", name: "Azhar" },
+        children: [
+          { id: "atiqa", name: "Atiqa" },
+          { id: "maira", name: "Maira" },
+        ],
+      },
+      {
+        id: "mussavir",
+        name: "Mussavir",
+        spouse: { id: "saniya", name: "Saniya" },
+        children: [{ id: "yazdan", name: "Yazdan" }],
+      },
+      {
+        id: "arshiya",
+        name: "Arshiya",
+        spouse: { id: "sharukh", name: "Sharukh" },
+        children: [
+          { id: "kabir", name: "Kabir" },
+          { id: "umar", name: "Umar" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "shakur",
+    name: "Shakur",
+    nickname: "Elder Uncle",
+    isLead: false,
+    spouse: { id: "chinni", name: "Chinni" },
+    children: [
+      { id: "eram", name: "Eram" },
+      {
+        id: "saba",
+        name: "Saba",
+        spouse: { id: "farukh", name: "Farukh" },
+        children: [
+          { id: "zikra", name: "Zikra" },
+          { id: "aarish", name: "Aarish" },
+        ],
+      },
+      {
+        id: "sana",
+        name: "Sana",
+        spouse: { id: "altaf", name: "Altaf" },
+        children: [
+          { id: "alvina", name: "Alvina" },
+          { id: "alian", name: "Alian" },
+        ],
+      },
+      {
+        id: "tasmiya",
+        name: "Tasmiya",
+        spouse: { id: "tayyab", name: "Tayyab" },
+        children: [{ id: "azlan", name: "Azlan" }],
+      },
+    ],
+  },
+  {
+    id: "sattar",
+    name: "Sattar",
+    nickname: "Uncle",
+    isLead: false,
+    spouse: { id: "guddi", name: "Guddi" },
+    children: [
+      {
+        id: "junaid",
+        name: "Junaid",
+        spouse: { id: "sufiya", name: "Sufiya" },
+        children: [{ id: "hamdan", name: "Hamdan" }],
+      },
+      {
+        id: "misbah",
+        name: "Misbah",
+        spouse: { id: "tanveer", name: "Tanveer" },
+        children: [{ id: "zoya", name: "Zoya" }],
+      },
+    ],
+  },
+  {
+    id: "mukhtar",
+    name: "Mukhtar",
+    nickname: "Youngest Brother",
+    isLead: false,
+    spouse: { id: "shabana", name: "Shabana" },
+    children: [
+      { id: "mustafa", name: "Mustafa" },
+      {
+        id: "sharmin",
+        name: "Sharmin",
+        spouse: { id: "sameer", name: "Sameer" },
+      },
+    ],
+  },
+];
 
 interface FamilyTreeCanvasProps {
   layout: TreeLayoutResult;
@@ -32,6 +162,7 @@ export function FamilyTreeCanvas({
   onSelectMember,
   selectedMemberId,
 }: FamilyTreeCanvasProps) {
+  const { language, tName } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Viewport Transform State
@@ -40,8 +171,12 @@ export function FamilyTreeCanvas({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
-  // Mobile Mode Toggle
-  const [viewMode, setViewMode] = useState<"canvas" | "mobile_explorer">("canvas");
+  // Mode & Filtering
+  const [viewMode, setViewMode] = useState<"canvas" | "mobile_explorer">("mobile_explorer");
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<
+    "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
+  >("all");
+
   const [expandedBranches, setExpandedBranches] = useState<Record<string, boolean>>({
     mohammad: true,
     akhtar: true,
@@ -54,6 +189,20 @@ export function FamilyTreeCanvas({
   const [treeSearch, setTreeSearch] = useState("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
+  // Real-time search matches
+  const searchResults = useMemo(() => {
+    if (!treeSearch.trim()) return [];
+    const q = treeSearch.toLowerCase().trim();
+    return members.filter(
+      (m) =>
+        m.first_name.toLowerCase().includes(q) ||
+        (m.last_name && m.last_name.toLowerCase().includes(q)) ||
+        (m.nickname && m.nickname.toLowerCase().includes(q)) ||
+        tName(m.first_name).toLowerCase().includes(q) ||
+        (m.nickname && tName(m.nickname).toLowerCase().includes(q))
+    ).slice(0, 6);
+  }, [treeSearch, members, tName]);
+
   // Fit to screen calculation
   const handleFitToScreen = useCallback(() => {
     if (!containerRef.current || !layout.bounds) return;
@@ -63,7 +212,6 @@ export function FamilyTreeCanvas({
 
     if (treeW === 0 || treeH === 0) return;
 
-    // Determine scale with margin
     const scaleX = (containerW - 80) / treeW;
     const scaleY = (containerH - 80) / treeH;
     const initialScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.1);
@@ -75,10 +223,28 @@ export function FamilyTreeCanvas({
     setPan({ x: initialPanX, y: initialPanY });
   }, [layout]);
 
+  // Jump to specific node in canvas view
+  const jumpToNode = useCallback(
+    (nodeId: string) => {
+      if (!containerRef.current) return;
+      const node = layout.nodes.find((n) => n.id === nodeId);
+      if (node) {
+        const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
+        const targetZoom = 0.95;
+        const targetX = containerW / 2 - (node.x + node.width / 2) * targetZoom;
+        const targetY = containerH / 2 - (node.y + node.height / 2) * targetZoom;
+        setZoom(targetZoom);
+        setPan({ x: targetX, y: targetY });
+        setHighlightedId(nodeId);
+      }
+    },
+    [layout.nodes]
+  );
+
   // Initial fit on load
   useEffect(() => {
     handleFitToScreen();
-    // Auto-detect small mobile screens on mount
+    // Default mobile screen to mobile_explorer
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setViewMode("mobile_explorer");
     }
@@ -86,7 +252,7 @@ export function FamilyTreeCanvas({
 
   // Center on node if selected
   useEffect(() => {
-    if (selectedMemberId && containerRef.current) {
+    if (selectedMemberId && containerRef.current && viewMode === "canvas") {
       const node = layout.nodes.find((n) => n.id === selectedMemberId);
       if (node) {
         const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
@@ -95,11 +261,11 @@ export function FamilyTreeCanvas({
         setPan({ x: targetX, y: targetY });
       }
     }
-  }, [selectedMemberId, layout.nodes, zoom]);
+  }, [selectedMemberId, layout.nodes, zoom, viewMode]);
 
   // Mouse pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Only left click
+    if (e.button !== 0) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -161,14 +327,20 @@ export function FamilyTreeCanvas({
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!treeSearch.trim()) return;
+    const q = treeSearch.toLowerCase().trim();
     const found = members.find(
       (m) =>
-        m.first_name.toLowerCase().includes(treeSearch.toLowerCase()) ||
-        (m.nickname && m.nickname.toLowerCase().includes(treeSearch.toLowerCase()))
+        m.first_name.toLowerCase().includes(q) ||
+        (m.nickname && m.nickname.toLowerCase().includes(q)) ||
+        tName(m.first_name).toLowerCase().includes(q) ||
+        (m.nickname && tName(m.nickname).toLowerCase().includes(q))
     );
     if (found) {
       setHighlightedId(found.id);
       onSelectMember(found.id);
+      if (viewMode === "canvas") {
+        jumpToNode(found.id);
+      }
     }
   };
 
@@ -176,79 +348,193 @@ export function FamilyTreeCanvas({
     setExpandedBranches((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  // Branch filter action
+  const handleBranchFilterClick = (
+    branchId: "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
+  ) => {
+    setSelectedBranchFilter(branchId);
+    if (branchId !== "all" && branchId !== "roots") {
+      setExpandedBranches((prev) => ({ ...prev, [branchId]: true }));
+    }
+    if (viewMode === "canvas") {
+      if (branchId === "roots") {
+        jumpToNode("mohammad");
+      } else if (branchId !== "all") {
+        jumpToNode(branchId);
+      } else {
+        handleFitToScreen();
+      }
+    }
+  };
+
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col bg-[#FAF7F2] overflow-hidden select-none">
       {/* Top Floating Control Bar */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none gap-2">
-        {/* Search & Mode Switch */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <form
-            onSubmit={handleSearchSubmit}
-            className="flex items-center bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-2xl shadow-md border border-stone-200/80 text-xs w-48 sm:w-64"
-          >
-            <Search className="w-3.5 h-3.5 text-stone-400 mr-2 flex-shrink-0" />
-            <input
-              type="text"
-              value={treeSearch}
-              onChange={(e) => setTreeSearch(e.target.value)}
-              placeholder="Find person in tree..."
-              className="w-full bg-transparent text-stone-800 placeholder-stone-400 outline-none text-xs"
-            />
-          </form>
+      <div className="absolute top-2 left-2 right-2 sm:top-4 sm:left-4 sm:right-4 z-20 flex flex-col gap-2 pointer-events-none">
+        {/* Main Controls Row: Search + View Mode Switcher */}
+        <div className="flex items-center justify-between gap-2 pointer-events-auto flex-wrap sm:flex-nowrap">
+          {/* Search Box with Live Results Dropdown */}
+          <div className="relative flex-1 max-w-md min-w-[200px]">
+            <form
+              onSubmit={handleSearchSubmit}
+              className="flex items-center bg-white/95 backdrop-blur-md px-3 py-2 rounded-2xl shadow-xs border border-stone-200/90 text-xs w-full min-h-[42px]"
+            >
+              <Search className="w-4 h-4 text-stone-400 mr-2 flex-shrink-0" />
+              <input
+                type="text"
+                value={treeSearch}
+                onChange={(e) => setTreeSearch(e.target.value)}
+                placeholder={
+                  language === "hi"
+                    ? "नाम से खोजें (अख़्तर, मुस्तफ़ा...)"
+                    : "Search person (Mustafa, Akhtar...)"
+                }
+                className="w-full bg-transparent text-stone-800 placeholder-stone-400 outline-none text-xs"
+              />
+              {treeSearch && (
+                <button
+                  type="button"
+                  onClick={() => setTreeSearch("")}
+                  className="p-1 text-stone-400 hover:text-stone-700 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </form>
 
-          <button
-            onClick={() =>
-              setViewMode((prev) => (prev === "canvas" ? "mobile_explorer" : "canvas"))
-            }
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-white/90 backdrop-blur-md border border-stone-200/80 shadow-md text-xs font-semibold text-stone-700 hover:text-amber-800 hover:bg-white transition-all"
-          >
-            <Layers className="w-3.5 h-3.5 text-amber-700" />
-            <span className="hidden sm:inline">
-              {viewMode === "canvas" ? "Compact Explorer" : "Full Interactive Tree"}
-            </span>
-            <span className="sm:hidden">{viewMode === "canvas" ? "Explorer" : "Tree"}</span>
-          </button>
+            {/* Live Autocomplete Dropdown */}
+            {searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-stone-200 overflow-hidden z-30 animate-in fade-in-50 duration-150">
+                <div className="p-1.5 text-[10px] font-bold uppercase text-stone-400 px-3 bg-stone-50 border-b border-stone-100">
+                  {language === "hi" ? "त्वरित परिणाम" : "Quick Matches"}
+                </div>
+                <div className="divide-y divide-stone-100 max-h-60 overflow-y-auto">
+                  {searchResults.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectMember(m.id);
+                        if (viewMode === "canvas") jumpToNode(m.id);
+                        setTreeSearch("");
+                      }}
+                      className="w-full text-left p-2.5 px-3 hover:bg-amber-50/80 flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-stone-900 text-amber-200 text-xs font-bold flex items-center justify-center flex-shrink-0">
+                          {m.first_name[0]}
+                        </div>
+                        <div className="truncate">
+                          <div className="font-bold text-xs text-stone-900 truncate">
+                            {tName(m.first_name)}{" "}
+                            <span className="font-normal text-stone-500 text-[11px]">
+                              ({m.first_name})
+                            </span>
+                          </div>
+                          {m.nickname && (
+                            <div className="text-[10px] text-amber-800 truncate">
+                              &ldquo;{tName(m.nickname)}&rdquo;
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md flex-shrink-0">
+                        {language === "hi" ? "देखें →" : "View →"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Mode Switcher + Zoom Controls */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Clean Segmented Control: Lineage vs Chart */}
+            <div className="flex items-center bg-stone-200/90 p-1 rounded-2xl border border-stone-300/80 shadow-2xs">
+              <button
+                onClick={() => setViewMode("mobile_explorer")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer min-h-[38px] flex items-center gap-1.5 ${
+                  viewMode === "mobile_explorer"
+                    ? "bg-amber-900 text-white shadow-xs"
+                    : "text-stone-700 hover:text-stone-900"
+                }`}
+              >
+                <span>🌳</span>
+                <span>{language === "hi" ? "पीढ़ियां" : "Lineage"}</span>
+              </button>
+              <button
+                onClick={() => setViewMode("canvas")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer min-h-[38px] flex items-center gap-1.5 ${
+                  viewMode === "canvas"
+                    ? "bg-amber-900 text-white shadow-xs"
+                    : "text-stone-700 hover:text-stone-900"
+                }`}
+              >
+                <span>🗺️</span>
+                <span>{language === "hi" ? "चार्ट" : "Chart"}</span>
+              </button>
+            </div>
+
+            {/* Canvas Zoom Controls (visible in canvas mode) */}
+            {viewMode === "canvas" && (
+              <div className="flex items-center gap-1 bg-white/90 backdrop-blur-md p-1 rounded-2xl shadow-xs border border-stone-200/80">
+                <button
+                  onClick={() => setZoom((z) => Math.min(z * 1.25, 2.2))}
+                  className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setZoom((z) => Math.max(z * 0.8, 0.25))}
+                  className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleFitToScreen}
+                  className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center cursor-pointer"
+                  title="Fit to Screen"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Zoom & Fit Controls (visible in canvas mode) */}
-        {viewMode === "canvas" && (
-          <div className="flex items-center gap-1.5 pointer-events-auto bg-white/90 backdrop-blur-md p-1.5 rounded-2xl shadow-md border border-stone-200/80">
-            <button
-              onClick={() => setZoom((z) => Math.min(z * 1.2, 2.2))}
-              className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setZoom((z) => Math.max(z * 0.8, 0.25))}
-              className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleFitToScreen}
-              className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors"
-              title="Fit to Screen"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => {
-                setZoom(1);
-                setPan({ x: 0, y: 0 });
-              }}
-              className="p-1.5 rounded-xl hover:bg-stone-100 text-stone-700 transition-colors"
-              title="Reset View"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <span className="px-2 py-0.5 text-[11px] font-semibold text-stone-500 border-l border-stone-200">
-              {Math.round(zoom * 100)}%
-            </span>
-          </div>
-        )}
+        {/* Quick Branch Filter Chips (Mobile Friendly, Horizontal Scrolling) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none pointer-events-auto">
+          {[
+            { id: "all", labelEn: "All Branches", labelHi: "संपूर्ण परिवार" },
+            { id: "roots", labelEn: "Mohammad & Hamida", labelHi: "दादा-दादी" },
+            { id: "akhtar", labelEn: "1. Akhtar (Lead)", labelHi: "१. अख़्तर (मुखिया)" },
+            { id: "shakur", labelEn: "2. Shakur", labelHi: "२. शकूर" },
+            { id: "sattar", labelEn: "3. Sattar", labelHi: "३. सत्तार" },
+            { id: "mukhtar", labelEn: "4. Mukhtar", labelHi: "४. मुख़्तार" },
+          ].map((b) => {
+            const isSelected = selectedBranchFilter === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() =>
+                  handleBranchFilterClick(
+                    b.id as "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
+                  )
+                }
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer min-h-[34px] shadow-2xs border ${
+                  isSelected
+                    ? "bg-amber-900 text-white border-amber-950 shadow-xs"
+                    : "bg-white/95 text-stone-700 hover:text-stone-900 border-stone-200/90 hover:bg-stone-100"
+                }`}
+              >
+                {language === "hi" ? b.labelHi : b.labelEn}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Main Canvas View */}
@@ -435,344 +721,300 @@ export function FamilyTreeCanvas({
               );
             })}
           </div>
+
+          {/* Floating Quick Jump & Mobile Helper Bar in Canvas */}
+          <div className="absolute bottom-20 sm:bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-stone-900/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-xl border border-stone-700/80 text-white max-w-[95vw] overflow-x-auto pointer-events-auto">
+            <span className="text-[11px] font-semibold text-amber-300 flex items-center gap-1 pl-1 pr-1.5 border-r border-stone-700 whitespace-nowrap">
+              <Compass className="w-3.5 h-3.5" />
+              <span>{language === "hi" ? "त्वरित पहुंच" : "Jump to"}</span>
+            </span>
+            {[
+              { id: "mohammad", name: "Mohammad" },
+              { id: "akhtar", name: "Akhtar" },
+              { id: "shakur", name: "Shakur" },
+              { id: "sattar", name: "Sattar" },
+              { id: "mukhtar", name: "Mukhtar" },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  jumpToNode(item.id);
+                }}
+                className="px-2.5 py-1 rounded-full text-xs font-medium hover:bg-stone-800 text-stone-200 hover:text-amber-300 transition-colors whitespace-nowrap cursor-pointer min-h-[32px]"
+              >
+                {tName(item.name)}
+              </button>
+            ))}
+          </div>
         </div>
       ) : (
-        /* Mobile Compact Branch Navigator (Section 65) */
-        <div className="w-full h-full overflow-y-auto p-4 sm:p-6 pb-20 max-w-2xl mx-auto space-y-4">
-          <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 text-xs text-amber-900 leading-relaxed">
-            <p className="font-semibold text-sm mb-1 flex items-center gap-1.5">
-              <span>🌳</span> Compact Family Hierarchy
-            </p>
-            Explore each branch generation by generation. Tap any family member to view their profile, documents, and kinship.
-          </div>
+        /* Mobile & Tablet Lineage Explorer (Touch-Friendly, Progressive Disclosure) */
+        <div className="w-full h-full overflow-y-auto px-4 sm:px-6 pt-30 sm:pt-32 pb-32 max-w-2xl mx-auto space-y-4">
+          {/* Active Filter Indicator if filtered */}
+          {selectedBranchFilter !== "all" && (
+            <div className="flex items-center justify-between bg-amber-100/90 border border-amber-300/80 px-4 py-2.5 rounded-2xl text-xs font-semibold text-amber-950 shadow-2xs">
+              <span className="flex items-center gap-1.5">
+                <span>📍</span>
+                <span>
+                  {language === "hi" ? "चयनित शाखा:" : "Filtered branch:"}{" "}
+                  <strong>
+                    {selectedBranchFilter === "roots"
+                      ? language === "hi"
+                        ? "दादा-दादी"
+                        : "Grandparents"
+                      : tName(
+                          BRANCHES_STRUCTURE.find((b) => b.id === selectedBranchFilter)
+                            ?.name
+                        )}
+                  </strong>
+                </span>
+              </span>
+              <button
+                onClick={() => setSelectedBranchFilter("all")}
+                className="text-[11px] underline font-bold text-amber-900 hover:text-amber-950 cursor-pointer"
+              >
+                {language === "hi" ? "सभी शाखाएं देखें" : "View All Branches"}
+              </button>
+            </div>
+          )}
 
           {/* Root Generation 1: Mohammad & Hamida */}
-          <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Generation 1 — Grandparents
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <button
-                onClick={() => onSelectMember("mohammad")}
-                className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-left hover:border-amber-400 transition-all"
-              >
-                <div className="font-semibold text-stone-900 text-sm">Mohammad</div>
-                <div className="text-xs text-stone-500">Grandfather • 🕊️ Deceased</div>
-              </button>
-
-              <button
-                onClick={() => onSelectMember("hamida")}
-                className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-left hover:border-amber-400 transition-all"
-              >
-                <div className="font-semibold text-stone-900 text-sm">Hamida</div>
-                <div className="text-xs text-stone-500">Grandmother</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Generation 2 Branches (Akhtar, Shakur, Sattar, Mukhtar in exact order) */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold uppercase tracking-wider text-stone-500 px-1">
-              Generation 2 — Siblings & Descendants
-            </div>
-
-            {/* Akhtar's Family */}
-            <div className="bg-white rounded-2xl border border-amber-300 shadow-sm overflow-hidden">
-              <div
-                onClick={() => toggleBranch("akhtar")}
-                className="p-4 bg-gradient-to-r from-amber-50/80 to-white flex items-center justify-between cursor-pointer"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-stone-900 text-sm">1. Akhtar</h3>
-                    <span className="text-xs text-amber-800 font-semibold">(Bade Pappa)</span>
-                    <span className="text-[10px] font-bold bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                      <Crown className="w-2.5 h-2.5" /> Lead
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-0.5">Spouse: Afroz • 3 Children</p>
-                </div>
-                {expandedBranches.akhtar ? (
-                  <ChevronDown className="w-4 h-4 text-stone-400" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-stone-400" />
-                )}
+          {(selectedBranchFilter === "all" || selectedBranchFilter === "roots") && (
+            <div className="bg-stone-900 text-white rounded-3xl p-4 sm:p-5 shadow-xs">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300/90 mb-3">
+                {language === "hi" ? "दादा-दादी (पीढ़ी 1)" : "Generation 1 — Grandparents"}
               </div>
 
-              {expandedBranches.akhtar && (
-                <div className="p-4 pt-2 border-t border-stone-100 bg-stone-50/50 space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onSelectMember("akhtar")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Akhtar
-                    </button>
-                    <span>•</span>
-                    <button
-                      onClick={() => onSelectMember("afroz")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Afroz (Spouse)
-                    </button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Mohammad */}
+                <button
+                  onClick={() => onSelectMember("mohammad")}
+                  className="p-3.5 rounded-2xl bg-stone-800/90 hover:bg-stone-800 text-left transition-all border border-stone-700/80 flex items-center justify-between cursor-pointer min-h-[64px]"
+                >
+                  <div className="flex items-center gap-3">
+                    {members.find((m) => m.id === "mohammad")?.photo_url ? (
+                      <img
+                        src={members.find((m) => m.id === "mohammad")!.photo_url!}
+                        alt="Mohammad"
+                        className="w-12 h-12 rounded-full object-cover border border-amber-300 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
+                        M
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-bold text-base text-white">{tName("Mohammad")}</div>
+                      <div className="text-xs text-amber-200/90">
+                        {language === "hi" ? "दादाजी • 🕊️ स्मृति में" : "Grandfather • 🕊️ In Memory"}
+                      </div>
+                    </div>
                   </div>
+                  <span className="text-xs font-semibold text-amber-300 bg-stone-700/80 px-2.5 py-1 rounded-lg">
+                    {language === "hi" ? "देखें →" : "View →"}
+                  </span>
+                </button>
 
-                  <div className="grid grid-cols-1 gap-2 pt-2">
-                    {/* Naziya */}
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("naziya")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Naziya (+ Azhar)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Children: Atiqa, Maira
+                {/* Hamida */}
+                <button
+                  onClick={() => onSelectMember("hamida")}
+                  className="p-3.5 rounded-2xl bg-stone-800/90 hover:bg-stone-800 text-left transition-all border border-stone-700/80 flex items-center justify-between cursor-pointer min-h-[64px]"
+                >
+                  <div className="flex items-center gap-3">
+                    {members.find((m) => m.id === "hamida")?.photo_url ? (
+                      <img
+                        src={members.find((m) => m.id === "hamida")!.photo_url!}
+                        alt="Hamida"
+                        className="w-12 h-12 rounded-full object-cover border border-amber-300 flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
+                        H
                       </div>
-                    </div>
-                    {/* Mussavir */}
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("mussavir")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Mussavir (+ Saniya)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Child: Yazdan (Baby boy)
-                      </div>
-                    </div>
-                    {/* Arshiya */}
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("arshiya")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Arshiya (+ Sharukh)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Children: Kabir, Umar
+                    )}
+                    <div>
+                      <div className="font-bold text-base text-white">{tName("Hamida")}</div>
+                      <div className="text-xs text-stone-300">
+                        {language === "hi" ? "दादीजी" : "Grandmother"}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                  <span className="text-xs font-semibold text-amber-300 bg-stone-700/80 px-2.5 py-1 rounded-lg">
+                    {language === "hi" ? "देखें →" : "View →"}
+                  </span>
+                </button>
+              </div>
             </div>
+          )}
 
-            {/* Shakur's Family */}
-            <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-              <div
-                onClick={() => toggleBranch("shakur")}
-                className="p-4 flex items-center justify-between cursor-pointer"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-stone-900 text-sm">2. Shakur</h3>
-                    <span className="text-xs text-stone-500">(Elder Uncle)</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-0.5">Spouse: Chinni • 4 Children</p>
-                </div>
-                {expandedBranches.shakur ? (
-                  <ChevronDown className="w-4 h-4 text-stone-400" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-stone-400" />
-                )}
+          {/* Generation 2: The 4 Brothers Branches */}
+          {selectedBranchFilter !== "roots" && (
+            <div className="space-y-3">
+              <div className="text-xs font-bold uppercase tracking-wider text-stone-500 px-1">
+                {language === "hi" ? "पीढ़ी 2 — 4 भाई और परिवार" : "Generation 2 — The 4 Brothers & Families"}
               </div>
 
-              {expandedBranches.shakur && (
-                <div className="p-4 pt-2 border-t border-stone-100 bg-stone-50/50 space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onSelectMember("shakur")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Shakur
-                    </button>
-                    <span>•</span>
-                    <button
-                      onClick={() => onSelectMember("chinni")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Chinni (Spouse)
-                    </button>
+              {BRANCHES_STRUCTURE
+                .filter((branch) =>
+                  selectedBranchFilter === "all" ? true : selectedBranchFilter === branch.id
+                )
+                .map((branch, idx) => {
+              const isExpanded = expandedBranches[branch.id] ?? true;
+              const bMember = members.find((m) => m.id === branch.id);
+
+              return (
+                <div
+                  key={branch.id}
+                  className={`border rounded-3xl transition-all overflow-hidden ${
+                    branch.isLead
+                      ? "bg-white border-amber-400/90 shadow-xs"
+                      : "bg-white border-stone-200/90 shadow-2xs"
+                  }`}
+                >
+                  {/* Lineage Header */}
+                  <div
+                    onClick={() => toggleBranch(branch.id)}
+                    className={`p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none ${
+                      branch.isLead ? "bg-amber-50/40" : "hover:bg-stone-50/60"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3.5">
+                      {bMember?.photo_url ? (
+                        <img
+                          src={bMember.photo_url}
+                          alt={branch.name}
+                          className="w-12 h-12 rounded-2xl object-cover border border-amber-300/80 shadow-2xs flex-shrink-0"
+                        />
+                      ) : (
+                        <div
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-serif font-bold flex-shrink-0 ${
+                            branch.isLead ? "bg-amber-900 text-white" : "bg-stone-200 text-stone-800"
+                          }`}
+                        >
+                          {branch.name[0]}
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-bold text-base text-stone-900">
+                            {idx + 1}. {tName(branch.name)}
+                          </h3>
+                          {branch.nickname && (
+                            <span className="text-xs font-medium text-amber-950 bg-amber-100 px-2 py-0.5 rounded-md">
+                              {tName(branch.nickname)}
+                            </span>
+                          )}
+                          {branch.isLead && (
+                            <span className="text-[11px] font-bold text-amber-900 bg-amber-200/90 px-2 py-0.5 rounded-md">
+                              {language === "hi" ? "परिवार मुखिया" : "Family Lead"}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-stone-500 mt-0.5">
+                          {language === "hi" ? "पत्नी" : "Spouse"}: <strong>{tName(branch.spouse?.name)}</strong> • {branch.children.length} {language === "hi" ? "बच्चे" : "Children"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-2 text-stone-400">
+                      {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-2 pt-2">
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("eram")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Eram (Unmarried)
-                      </button>
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("saba")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Saba (+ Farukh)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Children: Zikra, Aarish
+                  {/* Expanded Branch Content */}
+                  {isExpanded && (
+                    <div className="p-4 sm:p-5 border-t border-stone-100 bg-stone-50/50 space-y-4 animate-in slide-in-from-top-1 duration-200">
+                      {/* 48px+ Touch Buttons for Brother & Spouse */}
+                      <div className="flex flex-col sm:flex-row gap-2.5">
+                        <button
+                          onClick={() => onSelectMember(branch.id)}
+                          className="flex-1 min-h-[48px] py-2.5 px-4 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs cursor-pointer transition-colors"
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span>
+                            {language === "hi"
+                              ? `${tName(branch.name)} के विवरण व दस्तावेज़`
+                              : `${branch.name}'s Profile & Docs`}
+                          </span>
+                        </button>
+
+                        {branch.spouse && (
+                          <button
+                            onClick={() => onSelectMember(branch.spouse!.id)}
+                            className="flex-1 min-h-[48px] py-2.5 px-4 rounded-xl bg-white border border-stone-300 hover:border-amber-400 text-stone-800 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs cursor-pointer transition-colors"
+                          >
+                            <FileText className="w-4 h-4 text-amber-900" />
+                            <span>
+                              {tName(branch.spouse.name)} ({language === "hi" ? "पत्नी" : "Wife"})
+                            </span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Children List */}
+                      <div className="space-y-2 pt-1">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                          {language === "hi" ? "बच्चे व पोते-पोतियां" : "Children & Grandchildren:"}
+                        </div>
+
+                        <div className="space-y-2">
+                          {branch.children.map((child) => (
+                            <div
+                              key={child.id}
+                              className="bg-white p-3.5 rounded-2xl border border-stone-200/80 shadow-2xs"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="font-bold text-sm text-stone-900">
+                                    {tName(child.name)}
+                                  </div>
+                                  {child.spouse && (
+                                    <div className="text-xs text-stone-500 mt-0.5">
+                                      {language === "hi" ? "विवाहित" : "Married to"}: <strong>{tName(child.spouse.name)}</strong>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() => onSelectMember(child.id)}
+                                  className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-amber-100/70 hover:bg-amber-200/70 text-amber-950 text-xs font-semibold border border-amber-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-amber-800" />
+                                  <span>{language === "hi" ? "विवरण / दस्तावेज़" : "Profile & Docs"}</span>
+                                </button>
+                              </div>
+
+                              {/* Grandchildren Pills */}
+                              {child.children && child.children.length > 0 && (
+                                <div className="mt-2.5 pt-2 border-t border-stone-100">
+                                  <div className="text-[10px] font-bold uppercase text-stone-400 mb-1">
+                                    {language === "hi" ? "बच्चे" : "Children"}:
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {child.children.map((gc) => (
+                                      <button
+                                        key={gc.id}
+                                        onClick={() => onSelectMember(gc.id)}
+                                        className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-amber-100 text-stone-800 text-xs font-medium border border-stone-200 cursor-pointer transition-colors"
+                                      >
+                                        {tName(gc.name)}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("sana")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Sana (+ Altaf)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Children: Alvina, Alian
-                      </div>
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("tasmiya")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Tasmiya (+ Tayyab)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Child: Azlan (Male)
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
+              );
+            })}
             </div>
-
-            {/* Sattar's Family */}
-            <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-              <div
-                onClick={() => toggleBranch("sattar")}
-                className="p-4 flex items-center justify-between cursor-pointer"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-stone-900 text-sm">3. Sattar</h3>
-                    <span className="text-xs text-stone-500">(Uncle)</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-0.5">Spouse: Guddi • 2 Children</p>
-                </div>
-                {expandedBranches.sattar ? (
-                  <ChevronDown className="w-4 h-4 text-stone-400" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-stone-400" />
-                )}
-              </div>
-
-              {expandedBranches.sattar && (
-                <div className="p-4 pt-2 border-t border-stone-100 bg-stone-50/50 space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onSelectMember("sattar")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Sattar
-                    </button>
-                    <span>•</span>
-                    <button
-                      onClick={() => onSelectMember("guddi")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Guddi (Spouse)
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 pt-2">
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("junaid")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Junaid (+ Sufiya)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Child: Hamdan (Male)
-                      </div>
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("misbah")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Misbah (+ Tanveer)
-                      </button>
-                      <div className="text-[11px] text-stone-500 mt-0.5">
-                        Child: Zoya (Female)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Mukhtar's Family */}
-            <div className="bg-white rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-              <div
-                onClick={() => toggleBranch("mukhtar")}
-                className="p-4 flex items-center justify-between cursor-pointer"
-              >
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-stone-900 text-sm">4. Mukhtar</h3>
-                    <span className="text-xs text-stone-500">(Youngest Brother)</span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-0.5">Spouse: Shabana • 2 Children</p>
-                </div>
-                {expandedBranches.mukhtar ? (
-                  <ChevronDown className="w-4 h-4 text-stone-400" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-stone-400" />
-                )}
-              </div>
-
-              {expandedBranches.mukhtar && (
-                <div className="p-4 pt-2 border-t border-stone-100 bg-stone-50/50 space-y-2">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onSelectMember("mukhtar")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Mukhtar
-                    </button>
-                    <span>•</span>
-                    <button
-                      onClick={() => onSelectMember("shabana")}
-                      className="text-xs font-medium text-amber-800 hover:underline"
-                    >
-                      View Shabana (Spouse)
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-2 pt-2">
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("mustafa")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Mustafa
-                      </button>
-                    </div>
-                    <div className="p-2.5 bg-white rounded-xl border border-stone-200">
-                      <button
-                        onClick={() => onSelectMember("sharmin")}
-                        className="font-medium text-stone-900 text-xs hover:text-amber-800"
-                      >
-                        Sharmin (+ Sameer)
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>

@@ -1,5 +1,63 @@
 import bcrypt from "bcryptjs";
 import { getDb } from "./index";
+import initialDocuments from "../../data/initial-documents.json";
+
+export function seedDocuments(dbInstance?: ReturnType<typeof getDb>) {
+  const db = dbInstance || getDb();
+  try {
+    const docCount = db.prepare("SELECT count(*) as count FROM documents").get() as { count: number };
+    if (docCount.count > 0) return;
+
+    const now = new Date().toISOString();
+    const insertDoc = db.prepare(`
+      INSERT OR IGNORE INTO documents (
+        id, person_id, name, category, description, file_path, file_type,
+        file_size, document_number, issue_date, expiry_date, notes,
+        visibility, uploaded_by, uploaded_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const setPhoto = db.prepare(`
+      UPDATE family_members
+      SET profile_photo = ?, updated_at = ?
+      WHERE id = ? AND (profile_photo IS NULL OR profile_photo = '' OR profile_photo NOT LIKE 'gdrive:%')
+    `);
+
+    const tx = db.transaction(() => {
+      for (const doc of initialDocuments) {
+        insertDoc.run(
+          doc.id,
+          doc.person_id,
+          doc.name,
+          doc.category,
+          doc.description,
+          doc.file_path,
+          doc.file_type,
+          doc.file_size,
+          doc.document_number,
+          doc.issue_date,
+          doc.expiry_date,
+          doc.notes,
+          doc.visibility,
+          doc.uploaded_by,
+          doc.uploaded_at || now,
+          doc.updated_at || now
+        );
+      }
+
+      // Automatically link photos
+      setPhoto.run("gdrive:1wLlhcPMQH7Cg7Xmwh7zjpEnWDZCYOMmI", now, "mukhtar");
+      setPhoto.run("gdrive:1MzT1TOQjaV_Q-iNklvT0MZ84228i4TVu", now, "sharmin");
+      setPhoto.run("gdrive:1_ceJa4FxXPEm_qdIaVbA_b7z_bEgM_4K", now, "mustafa");
+      setPhoto.run("gdrive:17ZGGDmiJIg3v-AZV3Qcek8r_gOo7f2xU", now, "shabana");
+    });
+
+    tx();
+    console.log(`Auto-seeded ${initialDocuments.length} initial Google Drive documents.`);
+  } catch (err) {
+    console.error("Error auto-seeding documents:", err);
+  }
+}
 
 export function seedDatabase() {
   const db = getDb();
@@ -20,6 +78,9 @@ export function seedDatabase() {
     insertUser.run("user-member", "member", "member@family.local", passwordHash, "FAMILY_MEMBER", null, now, now);
     insertUser.run("user-viewer", "viewer", "viewer@family.local", passwordHash, "VIEWER", null, now, now);
   }
+
+  // Always ensure Google Drive documents exist even if family members are already seeded
+  seedDocuments(db);
 
   // Check if family members are already seeded
   const countRow = db.prepare("SELECT count(*) as count FROM family_members").get() as { count: number };

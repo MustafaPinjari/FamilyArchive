@@ -39,9 +39,11 @@ service-account*.json
 *.key.json
 
 # Local SQLite Database & Storage Vault
-/data/*.db*
+/data/*.db-shm
+/data/*.db-wal
 /data/vault/
 /data/photos/
+!/data/archive.db
 
 # vercel
 .vercel

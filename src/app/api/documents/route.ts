@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { seedDocuments } from "@/lib/db/seed";
 import { FamilyDocument } from "@/types";
 
 export async function GET(request: Request) {
@@ -30,11 +31,21 @@ export async function GET(request: Request) {
 
     query += " ORDER BY d.uploaded_at DESC";
 
-    const rows = db.prepare(query).all(...params) as (FamilyDocument & {
+    let rows = db.prepare(query).all(...params) as (FamilyDocument & {
       first_name: string;
       last_name: string | null;
       nickname: string | null;
     })[];
+
+    // Resilience: If empty on a fresh serverless cold-start, auto-seed and reload
+    if (rows.length === 0) {
+      seedDocuments(db);
+      rows = db.prepare(query).all(...params) as (FamilyDocument & {
+        first_name: string;
+        last_name: string | null;
+        nickname: string | null;
+      })[];
+    }
 
     return NextResponse.json({ success: true, documents: rows });
   } catch (error) {

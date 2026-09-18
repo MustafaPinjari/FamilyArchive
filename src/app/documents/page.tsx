@@ -1,6 +1,7 @@
 import { getSessionUser } from "@/lib/auth/session";
 import { Navbar } from "@/components/layout/Navbar";
 import { getDb } from "@/lib/db";
+import { seedDocuments } from "@/lib/db/seed";
 import { FamilyDocument, FamilyMember } from "@/types";
 import { DocumentsClient } from "./DocumentsClient";
 
@@ -25,10 +26,19 @@ export default async function DocumentsPage() {
   }
   query += " ORDER BY d.uploaded_at DESC";
 
-  const documents = db.prepare(query).all() as (FamilyDocument & {
+  let documents = db.prepare(query).all() as (FamilyDocument & {
     first_name: string;
     last_name: string | null;
   })[];
+
+  // Resilience: If empty on a fresh serverless cold-start, auto-seed and reload immediately
+  if (documents.length === 0) {
+    seedDocuments(db);
+    documents = db.prepare(query).all() as (FamilyDocument & {
+      first_name: string;
+      last_name: string | null;
+    })[];
+  }
 
   const members = db
     .prepare("SELECT * FROM family_members ORDER BY generation ASC, display_order ASC")
