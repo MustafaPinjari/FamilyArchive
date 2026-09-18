@@ -4,10 +4,26 @@ import { getDb } from "./index";
 export function seedDatabase() {
   const db = getDb();
 
-  // Check if already seeded
+  // Always ensure default admin users exist
+  const userCount = db.prepare("SELECT count(*) as count FROM users").get() as { count: number };
+  if (userCount.count === 0) {
+    const now = new Date().toISOString();
+    const insertUser = db.prepare(`
+      INSERT OR IGNORE INTO users (id, username, email, password_hash, role, family_member_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const defaultPassword = "Family@Archive2026";
+    const passwordHash = bcrypt.hashSync(defaultPassword, 10);
+    insertUser.run("user-mustafa", "mustafa", "mustafa@family.local", passwordHash, "SUPER_ADMIN", "mustafa", now, now);
+    insertUser.run("user-akhtar", "akhtar", "akhtar@family.local", passwordHash, "FAMILY_ADMIN", "akhtar", now, now);
+    insertUser.run("user-mukhtar", "mukhtar", "mukhtar@family.local", passwordHash, "FAMILY_MEMBER", "mukhtar", now, now);
+    insertUser.run("user-member", "member", "member@family.local", passwordHash, "FAMILY_MEMBER", null, now, now);
+    insertUser.run("user-viewer", "viewer", "viewer@family.local", passwordHash, "VIEWER", null, now, now);
+  }
+
+  // Check if family members are already seeded
   const countRow = db.prepare("SELECT count(*) as count FROM family_members").get() as { count: number };
   if (countRow.count > 0) {
-    console.log("Database already seeded with", countRow.count, "family members.");
     return;
   }
 

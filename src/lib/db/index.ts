@@ -2,24 +2,58 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-// Ensure data and vault storage directories exist
-const DATA_DIR = path.join(process.cwd(), "data");
-const VAULT_DIR = path.join(DATA_DIR, "vault");
-const PHOTOS_DIR = path.join(DATA_DIR, "photos");
+import os from "os";
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure data and vault storage directories exist (Resilient to read-only serverless filesystems)
+function resolveStorage() {
+  const localDataDir = path.join(process.cwd(), "data");
+  let chosenDataDir = localDataDir;
+
+  try {
+    if (!fs.existsSync(localDataDir)) {
+      fs.mkdirSync(localDataDir, { recursive: true });
+    }
+    const testFile = path.join(localDataDir, ".perm-check");
+    fs.writeFileSync(testFile, "ok");
+    fs.unlinkSync(testFile);
+  } catch {
+    // Read-only filesystem (Netlify / AWS Lambda / Serverless)
+    chosenDataDir = path.join(os.tmpdir(), "family-archive-data");
+    if (!fs.existsSync(chosenDataDir)) {
+      fs.mkdirSync(chosenDataDir, { recursive: true });
+    }
+    const packagedDb = path.join(localDataDir, "archive.db");
+    const tmpDb = path.join(chosenDataDir, "archive.db");
+    if (fs.existsSync(packagedDb) && !fs.existsSync(tmpDb)) {
+      try {
+        fs.copyFileSync(packagedDb, tmpDb);
+      } catch (err) {
+        console.warn("Could not copy pre-built db to tmp directory:", err);
+      }
+    }
+  }
+
+  const vaultDir = path.join(chosenDataDir, "vault");
+  const photosDir = path.join(chosenDataDir, "photos");
+
+  try {
+    if (!fs.existsSync(vaultDir)) fs.mkdirSync(vaultDir, { recursive: true });
+    if (!fs.existsSync(photosDir)) fs.mkdirSync(photosDir, { recursive: true });
+  } catch (err) {
+    console.warn("Could not initialize storage subdirectories:", err);
+  }
+
+  return {
+    DATA_DIR: chosenDataDir,
+    VAULT_DIR: vaultDir,
+    PHOTOS_DIR: photosDir,
+    DB_PATH: path.join(chosenDataDir, "archive.db"),
+  };
 }
-if (!fs.existsSync(VAULT_DIR)) {
-  fs.mkdirSync(VAULT_DIR, { recursive: true });
-}
-if (!fs.existsSync(PHOTOS_DIR)) {
-  fs.mkdirSync(PHOTOS_DIR, { recursive: true });
-}
+
+const { DATA_DIR, VAULT_DIR, PHOTOS_DIR, DB_PATH } = resolveStorage();
 
 export { VAULT_DIR, PHOTOS_DIR, DATA_DIR };
-
-const DB_PATH = path.join(DATA_DIR, "archive.db");
 
 // Singleton connection to prevent connection leaks during Next.js HMR
 const globalForDb = globalThis as unknown as {
@@ -171,6 +205,25 @@ function initSchema(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS family_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS family_properties (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      location TEXT,
+      description TEXT,
+      survey_number TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS property_members (
+      id TEXT PRIMARY KEY,
+      property_id TEXT NOT NULL,
+      member_id TEXT NOT NULL,
+      notes TEXT,
+      FOREIGN KEY (property_id) REFERENCES family_properties(id) ON DELETE CASCADE,
+      FOREIGN KEY (member_id) REFERENCES family_members(id) ON DELETE CASCADE
     );
 
     -- Performance Indexes

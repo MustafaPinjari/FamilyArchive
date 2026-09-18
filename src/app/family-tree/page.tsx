@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/session";
 import { Navbar } from "@/components/layout/Navbar";
 import { getDb } from "@/lib/db";
@@ -8,10 +7,6 @@ import { TreePageClient } from "./TreePageClient";
 
 export default async function FamilyTreePage() {
   const user = await getSessionUser();
-  if (!user) {
-    redirect("/login");
-  }
-
   const db = getDb();
 
   const members = db
@@ -42,7 +37,7 @@ export default async function FamilyTreePage() {
   const layout = computeFamilyTreeLayout(members, marriages, relationships, docCounts, photoCounts);
 
   return (
-    <div className="h-screen flex flex-col bg-[#FAF7F2] overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#FAF7F2] text-[#1C1917] overflow-hidden">
       <Navbar initialUser={user} />
       <TreePageClient layout={layout} members={members} />
     </div>

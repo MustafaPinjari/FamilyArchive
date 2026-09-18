@@ -9,19 +9,21 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  Lock,
-  Crown,
   Camera,
   Upload,
   CheckCircle2,
   AlertCircle,
   Loader2,
   Plus,
-  Trash2,
-  Globe,
+  ArrowLeft,
+  Users,
+  Home as HomeIcon,
+  Shield,
+  Layers,
 } from "lucide-react";
 import { FamilyDocument, FamilyMember } from "@/types";
 import { useLanguage } from "@/lib/i18n";
+import { Navbar } from "@/components/layout/Navbar";
 
 interface BranchData {
   id: string;
@@ -38,17 +40,7 @@ interface BranchData {
   }[];
 }
 
-const QUICK_DOCUMENT_PRESETS = [
-  { name: "Aadhaar Card", category: "Identity", icon: "🆔" },
-  { name: "PAN Card", category: "Identity", icon: "💳" },
-  { name: "Passport", category: "Identity", icon: "🛂" },
-  { name: "Property Deed", category: "Property", icon: "🏠" },
-  { name: "Medical Record", category: "Medical", icon: "🏥" },
-  { name: "Birth / Marriage Certificate", category: "Marriage & Family", icon: "📜" },
-  { name: "Bank / Tax Record", category: "Financial", icon: "🏦" },
-];
-
-// Sibling & descendants canonical tree structure
+// Canonical Indian Family Lineage Structure
 const BRANCHES_DATA: BranchData[] = [
   {
     id: "akhtar",
@@ -71,7 +63,7 @@ const BRANCHES_DATA: BranchData[] = [
         id: "mussavir",
         name: "Mussavir",
         spouse: { id: "saniya", name: "Saniya" },
-        children: [{ id: "yazdan", name: "Yazdan (Baby boy)" }],
+        children: [{ id: "yazdan", name: "Yazdan" }],
       },
       {
         id: "arshiya",
@@ -91,7 +83,7 @@ const BRANCHES_DATA: BranchData[] = [
     role: "Second Brother",
     spouse: { id: "chinni", name: "Chinni" },
     children: [
-      { id: "eram", name: "Eram (Unmarried)" },
+      { id: "eram", name: "Eram" },
       {
         id: "saba",
         name: "Saba",
@@ -142,7 +134,7 @@ const BRANCHES_DATA: BranchData[] = [
   {
     id: "mukhtar",
     name: "Mukhtar",
-    nickname: "Youngest Brother",
+    nickname: "Father",
     role: "Youngest Brother",
     spouse: { id: "shabana", name: "Shabana" },
     children: [
@@ -156,8 +148,8 @@ const BRANCHES_DATA: BranchData[] = [
   },
 ];
 
-export default function SimpleFamilyTree() {
-  const { language, toggleLanguage, t } = useLanguage();
+export default function FamilyHomePage() {
+  const { language, t, tName } = useLanguage();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [memberDocs, setMemberDocs] = useState<FamilyDocument[]>([]);
@@ -168,41 +160,34 @@ export default function SimpleFamilyTree() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoFeedback, setPhotoFeedback] = useState<string | null>(null);
 
-  // Quick Bulk & Single Upload Form in Drawer
+  // Upload Form inside person view
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadName, setUploadName] = useState("Aadhaar Card");
   const [uploadCategory, setUploadCategory] = useState("Identity");
-  const [adminPassword, setAdminPassword] = useState("Family@Archive2026");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
 
-  // Search
+  // Natural Language Search
   const [search, setSearch] = useState("");
 
-  // Which brother branch is open
+  // Which branch is open (Progressive Disclosure)
   const [openBranch, setOpenBranch] = useState<string | null>("akhtar");
 
+  // Load family members
   useEffect(() => {
     fetch("/api/family-tree")
-      .then((res) => res.json())
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.members && Array.isArray(data.members)) {
           setMembers(data.members);
         }
       })
-      .catch((err) => console.error("Error loading family:", err));
-
-    // Load saved admin password from localStorage if exists
-    if (typeof window !== "undefined") {
-      const savedPw = localStorage.getItem("family_admin_pw");
-      if (savedPw) setAdminPassword(savedPw);
-    }
+      .catch((err) => console.error("Error loading family tree:", err));
   }, []);
 
-  // When a person is clicked, load their profile and documents
-  // Fully resilient: opens immediately even if members list is loading or has case differences
+  // Open person profile & fetch documents (Resilient: never fails or stays silent)
   const handleOpenPerson = async (memberId: string) => {
     const targetId = memberId.toLowerCase().trim();
     let person = members.find((m) => m.id.toLowerCase() === targetId);
@@ -305,7 +290,6 @@ export default function SimpleFamilyTree() {
       }
     }
 
-    // Always immediately open the drawer
     setSelectedMember(person);
     setShowUploadForm(false);
     setUploadFiles([]);
@@ -332,14 +316,14 @@ export default function SimpleFamilyTree() {
         setMemberDocs([]);
       }
     } catch (err) {
-      console.error("Error loading docs:", err);
+      console.error("Error loading member documents:", err);
       setMemberDocs([]);
     } finally {
       setLoadingDocs(false);
     }
   };
 
-  // Change / Add Profile Photo Handler
+  // Profile Photo Upload Handler
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedMember) return;
@@ -356,27 +340,30 @@ export default function SimpleFamilyTree() {
       });
 
       const data = await res.json();
-      if (res.ok && data.photo_url) {
-        setSelectedMember((prev) => (prev ? { ...prev, photo_url: data.photo_url } : null));
+      const newPhotoUrl = data.photo_url || data.photoUrl;
+      if (res.ok && newPhotoUrl) {
+        setSelectedMember((prev) => (prev ? { ...prev, photo_url: newPhotoUrl } : null));
         setMembers((prev) =>
-          prev.map((m) => (m.id === selectedMember.id ? { ...m, photo_url: data.photo_url } : m))
+          prev.map((m) => (m.id === selectedMember.id ? { ...m, photo_url: newPhotoUrl } : m))
         );
-        setPhotoFeedback("✅ Photo updated!");
+        setPhotoFeedback(language === "hi" ? "फोटो अपडेट हो गई!" : "Photo updated!");
         setTimeout(() => setPhotoFeedback(null), 3000);
       } else {
-        setPhotoFeedback(data.error || "Failed to update photo");
+        setPhotoFeedback(
+          data.error || (language === "hi" ? "फोटो अपडेट नहीं हो सकी" : "Could not update photo")
+        );
       }
     } catch (err) {
-      console.error("Profile photo error:", err);
-      setPhotoFeedback("Upload error");
+      console.error("Photo upload error:", err);
+      setPhotoFeedback(language === "hi" ? "अपलोड में त्रुटि हुई" : "Upload error");
     } finally {
       setUploadingPhoto(false);
     }
   };
 
-  // Delete Document directly from drawer
+  // Delete Document
   const handleDeleteMemberDoc = async (docId: string, docName: string) => {
-    if (!confirm(`Delete "${docName}"?`)) return;
+    if (!confirm(`Are you sure you want to remove "${docName}"?`)) return;
     try {
       const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
       if (res.ok) {
@@ -387,11 +374,11 @@ export default function SimpleFamilyTree() {
     }
   };
 
-  // Quick Bulk / Single 1-Tap Upload Handler
-  const handleQuickUpload = async (e: React.FormEvent) => {
+  // Upload Document for Selected Member
+  const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (uploadFiles.length === 0 || !selectedMember) {
-      setUploadError("Please choose or photograph at least one document.");
+      setUploadError("Please choose a file or take a photo.");
       return;
     }
 
@@ -404,7 +391,6 @@ export default function SimpleFamilyTree() {
       formData.append("person_id", selectedMember.id);
       formData.append("name", uploadName);
       formData.append("category", uploadCategory);
-      formData.append("admin_password", adminPassword);
 
       const res = await fetch("/api/documents/upload", {
         method: "POST",
@@ -413,18 +399,13 @@ export default function SimpleFamilyTree() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || "Upload failed. Check admin password.");
-      }
-
-      // Save admin password to phone localStorage for future convenience
-      if (typeof window !== "undefined" && adminPassword) {
-        localStorage.setItem("family_admin_pw", adminPassword);
+        throw new Error(data.error || "Upload could not be completed.");
       }
 
       setUploadSuccess(true);
       setUploadFiles([]);
 
-      // Refresh documents
+      // Refresh person documents
       const docsRes = await fetch(`/api/members/${selectedMember.id}`);
       if (docsRes.ok) {
         const json = await docsRes.json();
@@ -443,365 +424,478 @@ export default function SimpleFamilyTree() {
     }
   };
 
-  // Sibling & descendants data
-  const branches = BRANCHES_DATA;
+  // Real-world document icon helper
+  const getDocumentEmoji = (doc: FamilyDocument) => {
+    const n = doc.name.toLowerCase();
+    const c = doc.category.toLowerCase();
+    if (n.includes("aadhaar") || c.includes("identity")) return "🪪";
+    if (n.includes("pan")) return "💳";
+    if (n.includes("property") || n.includes("7/12") || c.includes("property")) return "🏠";
+    if (n.includes("marriage") || c.includes("marriage")) return "💍";
+    if (n.includes("medical") || n.includes("health") || c.includes("medical")) return "🏥";
+    if (n.includes("passport")) return "🛂";
+    if (n.includes("school") || n.includes("degree") || c.includes("education")) return "🎓";
+    return "📄";
+  };
 
-  const filteredSearch = search.trim()
-    ? members.filter(
-        (m) =>
-          m.first_name.toLowerCase().includes(search.toLowerCase()) ||
-          (m.nickname && m.nickname.toLowerCase().includes(search.toLowerCase()))
-      )
+  // Search matches
+  const filteredMembers = search.trim()
+    ? members.filter((m) => {
+        const q = search.toLowerCase();
+        return (
+          m.first_name.toLowerCase().includes(q) ||
+          (m.nickname && m.nickname.toLowerCase().includes(q)) ||
+          tName(m.first_name).toLowerCase().includes(q) ||
+          (m.nickname && tName(m.nickname).toLowerCase().includes(q))
+        );
+      })
     : [];
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-[#1C1917] font-sans pb-20">
-      {/* Mobile-Friendly Top Header */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 py-3 shadow-xs">
-        <div className="max-w-xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🌳</span>
-            <div>
-              <h1 className="text-lg font-bold text-stone-900 leading-tight">
-                {t("appName")}
-              </h1>
-              <p className="text-[11px] text-stone-500">{t("appSubtitle")}</p>
+    <div className="min-h-screen bg-[#FAF7F2] text-[#1C1917] pb-24 md:pb-12">
+      {/* Universal Quiet Header */}
+      <Navbar />
+
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 space-y-8">
+        {/* Editorial Greeting & Natural Search (Front Door) */}
+        <section className="space-y-4 text-center sm:text-left">
+          <div className="max-w-xl">
+            <h1 className="font-serif text-2xl sm:text-4xl font-bold text-stone-900 tracking-tight leading-tight">
+              {language === "hi" ? "हमारा परिवार" : "Our Family Archive"}
+            </h1>
+            <p className="text-stone-600 text-sm sm:text-base mt-1.5 leading-relaxed">
+              {language === "hi"
+                ? "हमारे वंशवृक्ष, महत्वपूर्ण पारिवारिक दस्तावेज़ों और यादों का निजी डिजिटल संग्रहण।"
+                : "A private digital cupboard for our family tree, essential documents, and memories."}
+            </p>
+          </div>
+
+          {/* Search: Human Recognition */}
+          <div className="relative max-w-xl">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-stone-400">
+              <Search className="w-5 h-5" />
             </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* Language Switcher Toggle */}
-            <button
-              onClick={toggleLanguage}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100/80 hover:bg-amber-200/80 text-amber-900 rounded-full text-xs font-semibold border border-amber-300 transition-colors shadow-2xs cursor-pointer"
-              title="Switch Language / भाषा बदलें"
-            >
-              <Globe className="w-3.5 h-3.5 text-amber-800" />
-              <span>{language === "en" ? "हिंदी" : "English"}</span>
-            </button>
-
-            <a
-              href="/login"
-              className="flex items-center gap-1 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full text-xs font-semibold"
-              title="Admin Login"
-            >
-              <Lock className="w-3.5 h-3.5" />
-              <span>{t("adminBtn")}</span>
-            </a>
-          </div>
-        </div>
-
-        {/* Big Search Bar */}
-        <div className="max-w-xl mx-auto mt-2.5">
-          <div className="relative">
-            <Search className="w-5 h-5 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={t("searchPlaceholder")}
-              className="w-full pl-11 pr-4 py-2.5 bg-stone-100/80 border border-stone-200 rounded-2xl text-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-600/30 focus:bg-white"
+              placeholder={
+                language === "hi"
+                  ? "व्यक्ति या दस्तावेज़ खोजें (मुस्तफा, अख़्तर, आधार, 7/12)..."
+                  : "Find a person or document (Mustafa, Akhtar, Aadhaar, 7/12)..."
+              }
+              className="w-full pl-11 pr-10 py-3 bg-white border border-stone-300/90 rounded-2xl text-sm sm:text-base placeholder-stone-400 focus:outline-none focus:border-amber-900 shadow-2xs transition-all"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 p-1 cursor-pointer"
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-600 cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             )}
           </div>
-        </div>
-      </header>
+        </section>
 
-      {/* Main Content Area */}
-      <main className="max-w-xl mx-auto px-4 py-4 space-y-4">
-        {/* Search Results */}
+        {/* Search Results (if active) */}
         {search.trim() ? (
-          <div className="bg-white rounded-2xl p-4 border border-stone-200 shadow-sm space-y-2">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-              Matching Members ({filteredSearch.length})
-            </h3>
-            {filteredSearch.length > 0 ? (
+          <section className="bg-white rounded-3xl p-5 border border-stone-200/90 shadow-2xs space-y-3">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-stone-500">
+              {language === "hi" ? "मिलते-जुलते सदस्य" : "Matching Relatives"} ({filteredMembers.length})
+            </h2>
+            {filteredMembers.length > 0 ? (
               <div className="divide-y divide-stone-100">
-                {filteredSearch.map((m) => (
+                {filteredMembers.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => {
                       setSearch("");
                       handleOpenPerson(m.id);
                     }}
-                    className="w-full py-3 flex items-center justify-between text-left hover:bg-stone-50 px-2 rounded-xl"
+                    className="w-full py-3 px-2 flex items-center justify-between text-left hover:bg-stone-50 rounded-xl transition-colors cursor-pointer min-h-[52px]"
                   >
                     <div className="flex items-center gap-3">
                       {m.photo_url ? (
                         <img
                           src={m.photo_url}
                           alt={m.first_name}
-                          className="w-10 h-10 rounded-full object-cover border border-amber-300 flex-shrink-0"
+                          className="w-11 h-11 rounded-full object-cover border border-amber-300 flex-shrink-0"
                         />
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-900 font-bold flex items-center justify-center flex-shrink-0">
+                        <div className="w-11 h-11 rounded-full bg-stone-200 text-stone-800 font-bold flex items-center justify-center flex-shrink-0">
                           {m.first_name[0]}
                         </div>
                       )}
                       <div>
-                        <div className="font-bold text-sm text-stone-900">
-                          {m.first_name}{" "}
+                        <div className="font-semibold text-stone-900 text-sm sm:text-base">
+                          {tName(m.first_name)}{" "}
                           {m.nickname && (
-                            <span className="text-amber-800 font-normal">({m.nickname})</span>
+                            <span className="text-amber-900 font-normal">({tName(m.nickname)})</span>
                           )}
                         </div>
                         <div className="text-xs text-stone-500">
-                          {m.is_family_lead ? "👑 Family Lead" : m.is_deceased ? "🕊️ In Memory" : m.family_role || `Gen ${m.generation}`}
+                          {m.is_family_lead
+                            ? (language === "hi" ? "परिवार मुखिया" : "Family Lead")
+                            : m.is_deceased
+                            ? (language === "hi" ? "स्मृति में" : "In Memory")
+                            : tName(m.family_role) || (language === "hi" ? `पीढ़ी ${m.generation}` : `Generation ${m.generation}`)}
                         </div>
                       </div>
                     </div>
-                    <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
-                      Open 📄
+                    <span className="text-xs font-semibold text-amber-950 bg-amber-100/70 px-3 py-1.5 rounded-lg border border-amber-200/60 flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>{language === "hi" ? "दस्तावेज़" : "Documents"}</span>
                     </span>
                   </button>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-stone-500 py-4 text-center">No name found.</p>
+              <p className="text-sm text-stone-500 py-4 text-center">
+                {language === "hi" ? "कोई सदस्य नहीं मिला।" : "No relative found with that name."}
+              </p>
             )}
-          </div>
+          </section>
         ) : (
           <>
-            {/* Grandparents (Dada & Dadi) Card */}
-            <div className="bg-gradient-to-r from-amber-900 via-stone-800 to-stone-900 text-white rounded-3xl p-5 shadow-md">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 mb-2">
-                {t("grandparentsTitle")}
+            {/* 3-4 Meaningful Natural Cupboard Pathways */}
+            <section className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+              <a
+                href="/family-tree"
+                className="p-4 rounded-2xl bg-stone-100/80 hover:bg-stone-200/60 border border-stone-200 text-left transition-colors min-h-[84px] flex flex-col justify-between"
+              >
+                <span className="text-2xl">🌳</span>
+                <div>
+                  <div className="font-bold text-sm text-stone-900">
+                    {language === "hi" ? "वंशवृक्ष" : "Family Tree"}
+                  </div>
+                  <div className="text-[11px] text-stone-500">
+                    {language === "hi" ? "पीढ़ियां देखें" : "Explore lineage"}
+                  </div>
+                </div>
+              </a>
+
+              <a
+                href="/documents"
+                className="p-4 rounded-2xl bg-amber-100/50 hover:bg-amber-100/80 border border-amber-200/80 text-left transition-colors min-h-[84px] flex flex-col justify-between"
+              >
+                <span className="text-2xl">🪪</span>
+                <div>
+                  <div className="font-bold text-sm text-stone-900">
+                    {language === "hi" ? "पहचान पत्र" : "Identity Papers"}
+                  </div>
+                  <div className="text-[11px] text-stone-500">
+                    {language === "hi" ? "आधार, पैन, पासपोर्ट" : "Aadhaar, PAN & ID"}
+                  </div>
+                </div>
+              </a>
+
+              <a
+                href="/documents?category=Property"
+                className="p-4 rounded-2xl bg-stone-100/80 hover:bg-stone-200/60 border border-stone-200 text-left transition-colors min-h-[84px] flex flex-col justify-between"
+              >
+                <span className="text-2xl">🏠</span>
+                <div>
+                  <div className="font-bold text-sm text-stone-900">
+                    {language === "hi" ? "पारिवारिक संपत्ति" : "Family Property"}
+                  </div>
+                  <div className="text-[11px] text-stone-500">
+                    {language === "hi" ? "7/12 व ज़मीन कागज़" : "Deeds & land papers"}
+                  </div>
+                </div>
+              </a>
+
+              <a
+                href="/photos"
+                className="p-4 rounded-2xl bg-stone-100/80 hover:bg-stone-200/60 border border-stone-200 text-left transition-colors min-h-[84px] flex flex-col justify-between"
+              >
+                <span className="text-2xl">📷</span>
+                <div>
+                  <div className="font-bold text-sm text-stone-900">
+                    {language === "hi" ? "तस्वीरें" : "Family Photos"}
+                  </div>
+                  <div className="text-[11px] text-stone-500">
+                    {language === "hi" ? "पारिवारिक एल्बम" : "Photo album"}
+                  </div>
+                </div>
+              </a>
+            </section>
+
+            {/* The Connected Family Lineage (Progressive Disclosure) */}
+            <section className="space-y-4 pt-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-serif text-lg sm:text-xl font-bold text-stone-900">
+                    {language === "hi" ? "हमारा परिवार" : "The Family"}
+                  </h2>
+                  <p className="text-xs text-stone-500">
+                    {language === "hi"
+                      ? "दस्तावेज़ देखने के लिए किसी भी सदस्य पर टैप करें"
+                      : "Tap any relative to open their documents cupboard"}
+                  </p>
+                </div>
+                <span className="text-xs font-semibold text-stone-400">
+                  {language === "hi" ? "पीढ़ी 1 और 2" : "Generation 1 & 2"}
+                </span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => handleOpenPerson("mohammad")}
-                  className="bg-white/10 hover:bg-white/15 p-3 rounded-2xl text-left border border-white/15 transition-all cursor-pointer"
-                >
-                  {members.find((m) => m.id === "mohammad")?.photo_url ? (
-                    <img
-                      src={members.find((m) => m.id === "mohammad")!.photo_url!}
-                      alt="Mohammad"
-                      className="w-10 h-10 rounded-full object-cover mb-2 border border-amber-300"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-stone-200 text-stone-800 font-bold flex items-center justify-center mb-2">
-                      M
-                    </div>
-                  )}
-                  <div className="font-bold text-sm text-white">Mohammad</div>
-                  <div className="text-[11px] text-amber-200 mt-0.5">{t("inMemoryBadge")}</div>
-                  <div className="mt-2 text-[10px] text-stone-300 font-medium">{t("tapForDocs")}</div>
-                </button>
 
-                <button
-                  onClick={() => handleOpenPerson("hamida")}
-                  className="bg-white/10 hover:bg-white/15 p-3 rounded-2xl text-left border border-white/15 transition-all cursor-pointer"
-                >
-                  {members.find((m) => m.id === "hamida")?.photo_url ? (
-                    <img
-                      src={members.find((m) => m.id === "hamida")!.photo_url!}
-                      alt="Hamida"
-                      className="w-10 h-10 rounded-full object-cover mb-2 border border-amber-300"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-900 font-bold flex items-center justify-center mb-2">
-                      H
-                    </div>
-                  )}
-                  <div className="font-bold text-sm text-white">Hamida</div>
-                  <div className="text-[11px] text-stone-300 mt-0.5">Grandmother</div>
-                  <div className="mt-2 text-[10px] text-stone-300 font-medium">{t("tapForDocs")}</div>
-                </button>
-              </div>
-            </div>
-
-            {/* The 4 Brothers Branches */}
-            <div className="space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-500 px-1 pt-2">
-                {t("brothersTitle")}
-              </div>
-
-              {branches.map((b, idx) => {
-                const isOpen = openBranch === b.id;
-                const bMember = members.find((m) => m.id === b.id);
-
-                return (
-                  <div
-                    key={b.id}
-                    className={`bg-white rounded-3xl border transition-all overflow-hidden shadow-xs ${
-                      b.isLead ? "border-amber-400 ring-1 ring-amber-400/40" : "border-stone-200"
-                    }`}
+              {/* Generation 1: Grandparents (Dignified Memorial Design) */}
+              <div className="p-4 sm:p-5 rounded-3xl bg-stone-900 text-white shadow-xs">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300/90 mb-3">
+                  {language === "hi" ? "दादा-दादी (पीढ़ी 1)" : "Grandparents (Generation 1)"}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Mohammad (Deceased - Respectfully Honored) */}
+                  <button
+                    onClick={() => handleOpenPerson("mohammad")}
+                    className="p-3.5 rounded-2xl bg-stone-800/80 hover:bg-stone-800 text-left transition-all border border-stone-700/60 flex items-center justify-between cursor-pointer min-h-[64px]"
                   >
-                    {/* Brother Header */}
+                    <div className="flex items-center gap-3">
+                      {members.find((m) => m.id === "mohammad")?.photo_url ? (
+                        <img
+                          src={members.find((m) => m.id === "mohammad")!.photo_url!}
+                          alt="Mohammad"
+                          className="w-12 h-12 rounded-full object-cover border border-amber-300"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center">
+                          M
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-bold text-base text-white">{tName("Mohammad")}</div>
+                        <div className="text-xs text-amber-200/90">
+                          {language === "hi" ? "दादाजी • 🕊️ स्मृति में" : "Grandfather • 🕊️ In Memory"}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-medium text-stone-400">
+                      {language === "hi" ? "दस्तावेज़ →" : "Docs →"}
+                    </span>
+                  </button>
+
+                  {/* Hamida (Grandmother) */}
+                  <button
+                    onClick={() => handleOpenPerson("hamida")}
+                    className="p-3.5 rounded-2xl bg-stone-800/80 hover:bg-stone-800 text-left transition-all border border-stone-700/60 flex items-center justify-between cursor-pointer min-h-[64px]"
+                  >
+                    <div className="flex items-center gap-3">
+                      {members.find((m) => m.id === "hamida")?.photo_url ? (
+                        <img
+                          src={members.find((m) => m.id === "hamida")!.photo_url!}
+                          alt="Hamida"
+                          className="w-12 h-12 rounded-full object-cover border border-amber-300"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center">
+                          H
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-bold text-base text-white">{tName("Hamida")}</div>
+                        <div className="text-xs text-stone-300">
+                          {language === "hi" ? "दादीजी" : "Grandmother"}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-medium text-stone-400">
+                      {language === "hi" ? "दस्तावेज़ →" : "Docs →"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Generation 2: The 4 Brothers Branches */}
+              <div className="space-y-3 pt-2">
+                <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
+                  {language === "hi" ? "4 भाई और उनके परिवार" : "The 4 Brothers & Families"}
+                </div>
+
+                {BRANCHES_DATA.map((b, idx) => {
+                  const isOpen = openBranch === b.id;
+                  const bMember = members.find((m) => m.id === b.id);
+
+                  return (
                     <div
-                      onClick={() => setOpenBranch(isOpen ? null : b.id)}
-                      className={`p-4 sm:p-5 flex items-center justify-between cursor-pointer ${
-                        b.isLead ? "bg-gradient-to-r from-amber-50 to-white" : "bg-stone-50/70"
+                      key={b.id}
+                      className={`border rounded-3xl transition-all overflow-hidden ${
+                        b.isLead
+                          ? "bg-white border-amber-400/80 shadow-xs"
+                          : "bg-white border-stone-200/90 shadow-2xs"
                       }`}
                     >
-                      <div className="flex items-center gap-3.5">
-                        {bMember?.photo_url ? (
-                          <img
-                            src={bMember.photo_url}
-                            alt={b.name}
-                            className="w-12 h-12 rounded-2xl object-cover shadow-xs border border-amber-300 flex-shrink-0"
-                          />
-                        ) : (
-                          <div
-                            className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold shadow-xs flex-shrink-0 ${
-                              b.isLead
-                                ? "bg-amber-800 text-white"
-                                : "bg-stone-800 text-amber-200"
-                            }`}
-                          >
-                            {b.name[0]}
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h2 className="font-bold text-base text-stone-900">
-                              {idx + 1}. {b.name}
-                            </h2>
-                            {b.nickname && (
-                              <span className="text-xs font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-lg">
-                                {b.nickname}
-                              </span>
-                            )}
-                            {b.isLead && (
-                              <span className="text-[11px] font-bold text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                {t("leadBadge")}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs text-stone-500 mt-0.5">
-                            {t("spouseLabel")}: <strong>{b.spouse?.name}</strong> • {b.children.length} {t("childrenCount")}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="p-2 rounded-full bg-stone-100 text-stone-600">
-                        {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                      </div>
-                    </div>
-
-                    {/* Children & Actions */}
-                    {isOpen && (
-                      <div className="p-4 sm:p-5 border-t border-stone-100 bg-stone-50/30 space-y-4 animate-in slide-in-from-top-1 duration-200">
-                        {/* 1-Tap Brother & Spouse Actions */}
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => handleOpenPerson(b.id)}
-                            className="flex-1 py-2.5 px-3 rounded-2xl bg-amber-800 hover:bg-amber-900 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <FileText className="w-4 h-4" />
-                            <span>{b.name}&apos;s {t("documentsCount")}</span>
-                          </button>
-
-                          {b.spouse && (
-                            <button
-                              onClick={() => handleOpenPerson(b.spouse!.id)}
-                              className="flex-1 py-2.5 px-3 rounded-2xl bg-white border border-stone-300 hover:border-amber-400 text-stone-800 font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                      {/* Brother Lineage Header */}
+                      <div
+                        onClick={() => setOpenBranch(isOpen ? null : b.id)}
+                        className={`p-4 sm:p-5 flex items-center justify-between cursor-pointer select-none ${
+                          b.isLead ? "bg-amber-50/40" : "hover:bg-stone-50/50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          {bMember?.photo_url ? (
+                            <img
+                              src={bMember.photo_url}
+                              alt={b.name}
+                              className="w-13 h-13 rounded-2xl object-cover border border-amber-300/80 shadow-2xs flex-shrink-0"
+                            />
+                          ) : (
+                            <div
+                              className={`w-13 h-13 rounded-2xl flex items-center justify-center text-xl font-serif font-bold flex-shrink-0 ${
+                                b.isLead ? "bg-amber-900 text-white" : "bg-stone-200 text-stone-800"
+                              }`}
                             >
-                              <FileText className="w-4 h-4 text-amber-800" />
-                              <span>{b.spouse.name} ({t("wifeLabel")})</span>
-                            </button>
+                              {b.name[0]}
+                            </div>
                           )}
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-bold text-base sm:text-lg text-stone-900">
+                                {idx + 1}. {tName(b.name)}
+                              </h3>
+                              {b.nickname && (
+                                <span className="text-xs font-medium text-amber-950 bg-amber-100 px-2 py-0.5 rounded-md">
+                                  {tName(b.nickname)}
+                                </span>
+                              )}
+                              {b.isLead && (
+                                <span className="text-[11px] font-bold text-amber-900 bg-amber-200/90 px-2 py-0.5 rounded-md">
+                                  {language === "hi" ? "परिवार मुखिया" : "Family Lead"}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-stone-500 mt-0.5">
+                              {language === "hi" ? "पत्नी" : "Spouse"}: <strong>{tName(b.spouse?.name)}</strong> • {b.children.length} {language === "hi" ? "बच्चे" : "Children"}
+                            </p>
+                          </div>
                         </div>
 
-                        {/* Children List */}
-                        <div className="space-y-2.5 pt-1">
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                            {t("childrenTitle")}
-                          </div>
-
-                          <div className="space-y-2">
-                            {b.children.map((child) => (
-                              <div
-                                key={child.id}
-                                className="bg-white p-3.5 rounded-2xl border border-stone-200 shadow-xs"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="font-bold text-sm text-stone-900">
-                                      {child.name}
-                                    </div>
-                                    {child.spouse && (
-                                      <div className="text-xs text-stone-500 mt-0.5">
-                                        Married to: <strong>{child.spouse.name}</strong>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  <button
-                                    onClick={() => handleOpenPerson(child.id)}
-                                    className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold border border-amber-200 flex items-center gap-1 cursor-pointer"
-                                  >
-                                    <FileText className="w-3.5 h-3.5 text-amber-800" />
-                                    <span>{t("docsBtn")}</span>
-                                  </button>
-                                </div>
-
-                                {/* Grandchildren */}
-                                {child.children && child.children.length > 0 && (
-                                  <div className="mt-2.5 pt-2 border-t border-stone-100">
-                                    <div className="text-[10px] font-bold uppercase text-stone-400 mb-1">
-                                      Children:
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {child.children.map((gc) => (
-                                        <button
-                                          key={gc.id}
-                                          onClick={() => handleOpenPerson(gc.id)}
-                                          className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-amber-100 text-stone-800 text-xs font-medium border border-stone-200 transition-colors"
-                                        >
-                                          {gc.name}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
+                        <div className="p-2 text-stone-500">
+                          {isOpen ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                         </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+
+                      {/* Progressive Disclosure: Family Unit Details */}
+                      {isOpen && (
+                        <div className="p-4 sm:p-5 border-t border-stone-100 bg-stone-50/50 space-y-4 animate-in slide-in-from-top-1 duration-200">
+                          {/* Primary Actions: Brother & Spouse Documents (48px+ Touch) */}
+                          <div className="flex flex-col sm:flex-row gap-2.5">
+                            <button
+                              onClick={() => handleOpenPerson(b.id)}
+                              className="flex-1 min-h-[48px] py-2.5 px-4 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>
+                                {language === "hi"
+                                  ? `${tName(b.name)} के दस्तावेज़`
+                                  : `${b.name}'s Documents`}
+                              </span>
+                            </button>
+
+                            {b.spouse && (
+                              <button
+                                onClick={() => handleOpenPerson(b.spouse!.id)}
+                                className="flex-1 min-h-[48px] py-2.5 px-4 rounded-xl bg-white border border-stone-300 hover:border-amber-400 text-stone-800 font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-2xs cursor-pointer transition-colors"
+                              >
+                                <FileText className="w-4 h-4 text-amber-900" />
+                                <span>
+                                  {tName(b.spouse.name)} ({language === "hi" ? "पत्नी" : "Wife"})
+                                </span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Children List */}
+                          <div className="space-y-2 pt-1">
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
+                              {language === "hi" ? "बच्चे व पोते-पोतियां" : "Children & Grandchildren:"}
+                            </div>
+
+                            <div className="space-y-2">
+                              {b.children.map((child) => (
+                                <div
+                                  key={child.id}
+                                  className="bg-white p-3.5 rounded-2xl border border-stone-200/80 shadow-2xs"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <div className="font-bold text-sm text-stone-900">
+                                        {tName(child.name)}
+                                      </div>
+                                      {child.spouse && (
+                                        <div className="text-xs text-stone-500 mt-0.5">
+                                          {language === "hi" ? "विवाहित" : "Married to"}: <strong>{tName(child.spouse.name)}</strong>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      onClick={() => handleOpenPerson(child.id)}
+                                      className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-amber-100/70 hover:bg-amber-200/70 text-amber-950 text-xs font-semibold border border-amber-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-amber-800" />
+                                      <span>{language === "hi" ? "दस्तावेज़" : "Documents"}</span>
+                                    </button>
+                                  </div>
+
+                                  {/* Grandchildren Pills */}
+                                  {child.children && child.children.length > 0 && (
+                                    <div className="mt-2.5 pt-2 border-t border-stone-100">
+                                      <div className="text-[10px] font-bold uppercase text-stone-400 mb-1">
+                                        {language === "hi" ? "बच्चे" : "Children"}:
+                                      </div>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {child.children.map((gc) => (
+                                          <button
+                                            key={gc.id}
+                                            onClick={() => handleOpenPerson(gc.id)}
+                                            className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-amber-100 text-stone-800 text-xs font-medium border border-stone-200 cursor-pointer transition-colors"
+                                          >
+                                            {tName(gc.name)}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           </>
         )}
       </main>
 
-      {/* Slide-up Profile & Document Drawer */}
+      {/* Person Profile & Document Cupboard Sheet */}
       {selectedMember && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl border border-stone-200 max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-300">
-            {/* Header */}
-            <div className="p-4 sm:p-5 border-b border-stone-200 bg-stone-50/90 flex items-center justify-between">
+            {/* Person Header (Portrait-Focused) */}
+            <div className="p-5 border-b border-stone-200 bg-[#FAF7F2] flex items-center justify-between">
               <div className="flex items-center gap-3.5">
-                {/* Profile Avatar with Photo Upload button */}
+                {/* Portrait Avatar */}
                 <div className="relative flex-shrink-0">
                   {selectedMember.photo_url ? (
                     <img
                       src={selectedMember.photo_url}
                       alt={selectedMember.first_name}
-                      className="w-14 h-14 rounded-2xl object-cover shadow-sm border-2 border-amber-300"
+                      className="w-14 h-14 rounded-2xl object-cover shadow-2xs border border-amber-300"
                     />
                   ) : (
-                    <div className="w-14 h-14 rounded-2xl bg-amber-800 text-white font-bold text-xl flex items-center justify-center shadow-xs">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-900 text-white font-serif font-bold text-xl flex items-center justify-center">
                       {selectedMember.first_name[0]}
                     </div>
                   )}
 
-                  {/* Camera Icon Overlay to Add/Change Profile Photo */}
+                  {/* Camera Icon to change/add photo */}
                   <label
-                    htmlFor="member-photo-input"
-                    className="absolute -bottom-1.5 -right-1.5 w-6 h-6 bg-amber-700 hover:bg-amber-800 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition-transform hover:scale-110"
-                    title="Add or Change Profile Photo"
+                    htmlFor="member-photo-file"
+                    className="absolute -bottom-1 -right-1 w-6 h-6 bg-amber-900 hover:bg-amber-950 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition-transform hover:scale-110"
+                    title="Add or change photo"
                   >
                     {uploadingPhoto ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -810,7 +904,7 @@ export default function SimpleFamilyTree() {
                     )}
                   </label>
                   <input
-                    id="member-photo-input"
+                    id="member-photo-file"
                     type="file"
                     accept="image/*"
                     onChange={handlePhotoChange}
@@ -819,106 +913,92 @@ export default function SimpleFamilyTree() {
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h3 className="font-bold text-lg text-stone-900 leading-snug">
-                      {selectedMember.first_name}
-                    </h3>
+                  <h3 className="font-bold text-lg text-stone-900 leading-snug">
+                    {tName(selectedMember.first_name)}{" "}
                     {selectedMember.nickname && (
-                      <span className="text-xs font-bold text-amber-800">
-                        &ldquo;{selectedMember.nickname}&rdquo;
-                      </span>
+                      <span className="font-normal text-amber-900 text-sm">({tName(selectedMember.nickname)})</span>
                     )}
-                    {photoFeedback && (
-                      <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
-                        {photoFeedback}
-                      </span>
-                    )}
-                  </div>
+                  </h3>
                   <p className="text-xs text-stone-500">
                     {selectedMember.is_family_lead
-                      ? "👑 Family Lead"
+                      ? (language === "hi" ? "परिवार मुखिया" : "Family Lead")
                       : selectedMember.is_deceased
-                      ? "🕊️ In Loving Memory"
-                      : selectedMember.family_role || `Generation ${selectedMember.generation}`}
+                      ? (language === "hi" ? "स्मृति में" : "In Memory")
+                      : tName(selectedMember.family_role) || (language === "hi" ? `पीढ़ी ${selectedMember.generation}` : `Generation ${selectedMember.generation}`)}
                   </p>
-                  <label
-                    htmlFor="member-photo-input"
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-950 cursor-pointer mt-0.5"
-                  >
-                    <Camera className="w-3 h-3" />
-                    <span>{selectedMember.photo_url ? "Change Photo" : "+ Add Profile Photo"}</span>
-                  </label>
+                  {photoFeedback && (
+                    <p className="text-[11px] text-emerald-800 font-medium mt-0.5">{photoFeedback}</p>
+                  )}
                 </div>
               </div>
 
               <button
                 onClick={() => setSelectedMember(null)}
-                className="p-2 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-700 cursor-pointer"
+                className="p-2 rounded-full bg-stone-200/80 hover:bg-stone-300 text-stone-700 cursor-pointer min-h-[40px] min-w-[40px] flex items-center justify-center"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Document Content */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
-              {/* Header with Upload Toggle Button */}
+            {/* Document Cupboard Body */}
+            <div className="p-5 overflow-y-auto space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-sm text-stone-900 flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-amber-800" />
-                  <span>Documents ({memberDocs.length})</span>
+                  <FileText className="w-4 h-4 text-amber-900" />
+                  <span>
+                    {language === "hi"
+                      ? `${tName(selectedMember.first_name)} के दस्तावेज़`
+                      : `${selectedMember.first_name}'s Documents`} ({memberDocs.length})
+                  </span>
                 </h4>
 
                 <button
                   onClick={() => setShowUploadForm(!showUploadForm)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                  className={`min-h-[40px] px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
                     showUploadForm
                       ? "bg-stone-200 text-stone-800"
-                      : "bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs"
+                      : "bg-amber-900 hover:bg-amber-950 text-white shadow-2xs"
                   }`}
                 >
                   {showUploadForm ? (
-                    <span>Cancel</span>
+                    <span>{language === "hi" ? "रद्द करें" : "Cancel"}</span>
                   ) : (
                     <>
                       <Plus className="w-4 h-4" />
-                      <span>+ Add Document(s)</span>
+                      <span>{language === "hi" ? "+ दस्तावेज़ जोड़ें" : "+ Add Document"}</span>
                     </>
                   )}
                 </button>
               </div>
 
-              {/* ULTRA-SIMPLE INLINE UPLOAD FORM */}
+              {/* Simple Document Uploader */}
               {showUploadForm && (
-                <div className="p-4 bg-amber-50/70 rounded-2xl border-2 border-dashed border-amber-300 space-y-3.5 animate-in slide-in-from-top-2 duration-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1">
-                      <span>📸</span> Add Document(s) for {selectedMember.first_name}
-                    </span>
-                    <span className="text-[10px] font-bold text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded-md">
-                      Bulk Supported
-                    </span>
+                <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-300/80 space-y-3 animate-in slide-in-from-top-1">
+                  <div className="text-xs font-bold text-amber-950">
+                    {language === "hi"
+                      ? `${selectedMember.first_name} के लिए दस्तावेज़ जोड़ें`
+                      : `Add document for ${selectedMember.first_name}`}
                   </div>
 
                   {uploadError && (
-                    <div className="p-2.5 bg-rose-100 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
+                    <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                       <span>{uploadError}</span>
                     </div>
                   )}
 
                   {uploadSuccess && (
-                    <div className="p-2.5 bg-emerald-100 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
+                    <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                      <span>Document(s) uploaded successfully!</span>
+                      <span>{language === "hi" ? "दस्तावेज़ सफलतापूर्वक सहेजा गया!" : "Document saved successfully!"}</span>
                     </div>
                   )}
 
-                  <form onSubmit={handleQuickUpload} className="space-y-3">
-                    {/* 1. Take Photo or Choose Files (Bulk allowed) */}
+                  <form onSubmit={handleUploadSubmit} className="space-y-3">
                     <div>
                       <input
                         type="file"
-                        id="quick-camera-input"
+                        id="member-doc-file"
                         multiple
                         accept="image/*,application/pdf"
                         onChange={(e) => {
@@ -929,84 +1009,72 @@ export default function SimpleFamilyTree() {
                         className="hidden"
                       />
                       <label
-                        htmlFor="quick-camera-input"
-                        className="w-full py-3.5 px-4 rounded-2xl bg-white border-2 border-dashed border-amber-400 hover:border-amber-600 text-amber-900 flex flex-col items-center justify-center gap-1 cursor-pointer shadow-xs font-semibold text-sm transition-all text-center"
+                        htmlFor="member-doc-file"
+                        className="w-full min-h-[48px] py-2.5 px-4 bg-white border border-stone-300 hover:border-amber-500 rounded-xl text-xs font-semibold text-stone-800 flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
                       >
-                        <Camera className="w-6 h-6 text-amber-700" />
-                        {uploadFiles.length > 0 ? (
-                          <span className="truncate max-w-xs text-emerald-800 font-bold text-xs">
-                            ✅ {uploadFiles.length} file(s) chosen ({uploadFiles.map((f) => f.name).slice(0, 2).join(", ")}{uploadFiles.length > 2 ? "..." : ""})
-                          </span>
-                        ) : (
-                          <>
-                            <span>Take Photo or Choose Files</span>
-                            <span className="text-[11px] text-stone-400 font-normal">
-                              You can select multiple files / photos at once
-                            </span>
-                          </>
-                        )}
+                        <Camera className="w-4 h-4 text-amber-900" />
+                        <span>
+                          {uploadFiles.length > 0
+                            ? `${uploadFiles.length} file(s) selected`
+                            : language === "hi"
+                            ? "फोटो खींचें या फाइल चुनें"
+                            : "Take Photo or Select File"}
+                        </span>
                       </label>
                     </div>
 
-                    {/* 2. Quick 1-Tap Name Preset Pills */}
-                    <div>
-                      <span className="block text-[11px] font-bold text-stone-600 uppercase tracking-wider mb-1.5">
-                        Choose Document Type (1-Tap):
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {QUICK_DOCUMENT_PRESETS.map((p) => {
-                          const isSelected = uploadName === p.name;
-                          return (
-                            <button
-                              key={p.name}
-                              type="button"
-                              onClick={() => {
-                                setUploadName(p.name);
-                                setUploadCategory(p.category);
-                              }}
-                              className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                                isSelected
-                                  ? "bg-amber-800 text-white shadow-xs scale-102"
-                                  : "bg-white text-stone-700 border border-stone-300 hover:border-amber-400"
-                              }`}
-                            >
-                              <span>{p.icon}</span>
-                              <span>{p.name}</span>
-                            </button>
-                          );
-                        })}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                          Document Type
+                        </label>
+                        <select
+                          value={uploadName}
+                          onChange={(e) => setUploadName(e.target.value)}
+                          className="w-full px-2.5 py-2 bg-white border border-stone-300 rounded-xl text-xs text-stone-800"
+                        >
+                          <option value="Aadhaar Card">Aadhaar Card</option>
+                          <option value="PAN Card">PAN Card</option>
+                          <option value="Passport">Passport</option>
+                          <option value="Property Paper">Property Paper / 7-12</option>
+                          <option value="Marriage Certificate">Marriage Certificate</option>
+                          <option value="Medical Record">Medical Record</option>
+                          <option value="School Certificate">School Certificate</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-stone-600 mb-1">
+                          Category
+                        </label>
+                        <select
+                          value={uploadCategory}
+                          onChange={(e) => setUploadCategory(e.target.value)}
+                          className="w-full px-2.5 py-2 bg-white border border-stone-300 rounded-xl text-xs text-stone-800"
+                        >
+                          <option value="Identity">Identity</option>
+                          <option value="Property">Property</option>
+                          <option value="Marriage & Family">Marriage & Family</option>
+                          <option value="Medical">Medical</option>
+                          <option value="Education">Education</option>
+                        </select>
                       </div>
                     </div>
 
-                    {/* 3. Optional custom document name input */}
-                    <div>
-                      <input
-                        type="text"
-                        value={uploadName}
-                        onChange={(e) => setUploadName(e.target.value)}
-                        placeholder="Or type document name..."
-                        required
-                        className="w-full px-3.5 py-2 bg-white border border-stone-300 rounded-xl text-xs text-stone-900 focus:outline-none focus:border-amber-600"
-                      />
-                    </div>
-
-                    {/* 4. Big Upload Action Button */}
                     <button
                       type="submit"
                       disabled={uploading || uploadFiles.length === 0}
-                      className="w-full py-3 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2 disabled:opacity-50 transition-all cursor-pointer"
+                      className="w-full min-h-[48px] py-2.5 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-bold text-xs shadow-xs flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                     >
                       {uploading ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Uploading {uploadFiles.length} Document(s)...</span>
+                          <span>Saving...</span>
                         </>
                       ) : (
                         <>
                           <Upload className="w-4 h-4" />
-                          <span>
-                            Upload {uploadFiles.length > 1 ? `${uploadFiles.length} Documents` : "Document"}
-                          </span>
+                          <span>{language === "hi" ? "दस्तावेज़ सुरक्षित करें" : "Save Document"}</span>
                         </>
                       )}
                     </button>
@@ -1014,102 +1082,82 @@ export default function SimpleFamilyTree() {
                 </div>
               )}
 
-              {/* Document List */}
+              {/* Real-World Document List (Human Mental Model) */}
               {loadingDocs ? (
                 <div className="py-8 text-center text-sm text-stone-400 flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
-                  <span>Loading documents...</span>
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-800" />
+                  <span>Loading cupboard...</span>
                 </div>
               ) : memberDocs.length > 0 ? (
-                <div className="space-y-2.5">
+                <div className="space-y-2">
                   {memberDocs.map((doc) => (
                     <div
                       key={doc.id}
-                      className="p-3 rounded-2xl border border-stone-200 bg-stone-50 hover:bg-white hover:border-amber-300 flex items-center justify-between gap-3 shadow-2xs transition-all"
+                      className="p-3.5 rounded-2xl border border-stone-200 bg-white hover:border-amber-300 flex items-center justify-between gap-3 shadow-2xs transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        {/* Interactive Thumbnail Preview */}
+                        {/* Thumbnail / Real-world Icon */}
                         <div
                           onClick={() => setPreviewDoc(doc)}
-                          className="relative cursor-pointer flex-shrink-0 group"
-                          title="Tap to preview"
+                          className="w-12 h-12 rounded-xl bg-stone-100 border border-stone-200/80 flex items-center justify-center text-2xl flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-amber-500 overflow-hidden"
+                          title="Click to view"
                         >
-                          {doc.file_type.startsWith("image/") ? (
-                            // eslint-disable-next-line @next/next/no-img-element
+                          {doc.file_type?.startsWith("image/") ? (
                             <img
                               src={`/api/documents/${doc.id}/preview`}
                               alt={doc.name}
-                              className="w-12 h-12 rounded-xl object-cover border border-amber-200 shadow-2xs group-hover:ring-2 group-hover:ring-amber-500 transition-all"
+                              className="w-full h-full object-cover"
                             />
-                          ) : doc.file_type.includes("pdf") ? (
-                            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-700 shadow-2xs group-hover:bg-rose-100 transition-colors">
-                              <FileText className="w-5 h-5 text-rose-600" />
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-rose-800">PDF</span>
-                            </div>
                           ) : (
-                            <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-amber-800 shadow-2xs group-hover:bg-amber-100 transition-colors">
-                              <FileText className="w-5 h-5 text-amber-700" />
-                              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DOC</span>
-                            </div>
+                            <span>{getDocumentEmoji(doc)}</span>
                           )}
                         </div>
 
                         <div className="truncate">
-                          <div className="font-bold text-sm text-stone-900 truncate flex items-center gap-1.5">
-                            <span
-                              onClick={() => setPreviewDoc(doc)}
-                              className="truncate hover:text-amber-800 cursor-pointer"
-                            >
-                              {doc.name}
-                            </span>
-                            <button
-                              onClick={() => setPreviewDoc(doc)}
-                              className="text-[10px] font-bold text-amber-900 bg-amber-100/90 hover:bg-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors flex-shrink-0"
-                            >
-                              {t("preview")}
-                            </button>
-                          </div>
-                          <div className="text-xs text-stone-500 mt-0.5">
+                          <h5
+                            onClick={() => setPreviewDoc(doc)}
+                            className="font-semibold text-stone-900 text-sm truncate cursor-pointer hover:text-amber-900"
+                          >
+                            {doc.name}
+                          </h5>
+                          <p className="text-xs text-stone-500 mt-0.5">
                             {doc.category} • {(doc.file_size / 1024).toFixed(0)} KB
-                          </div>
+                          </p>
                         </div>
                       </div>
 
-                      {/* View, Download & Delete Buttons */}
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {/* Obvious Actions (Fitts's Law: 48px+ Targets) */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => setPreviewDoc(doc)}
-                          className="px-3 py-1.5 rounded-xl bg-amber-800 text-white text-xs font-semibold shadow-xs hover:bg-amber-900 flex items-center gap-1 cursor-pointer"
+                          className="min-h-[44px] px-3 py-1.5 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-semibold text-xs flex items-center gap-1.5 shadow-2xs cursor-pointer"
                         >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>{t("viewBtn")}</span>
+                          <Eye className="w-4 h-4" />
+                          <span>{language === "hi" ? "देखें" : "Open"}</span>
                         </button>
 
                         <a
                           href={`/api/documents/${doc.id}/download`}
-                          className="p-1.5 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-800 transition-colors"
-                          title="Download to Phone"
+                          className="min-h-[44px] min-w-[44px] rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 flex items-center justify-center border border-stone-200 cursor-pointer"
+                          title="Download"
                         >
                           <Download className="w-4 h-4" />
                         </a>
-
-                        <button
-                          onClick={() => handleDeleteMemberDoc(doc.id, doc.name)}
-                          className="p-1.5 rounded-xl bg-stone-200 hover:bg-rose-100 text-stone-500 hover:text-rose-600 transition-colors cursor-pointer"
-                          title="Delete document"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="p-6 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200">
-                  <FileText className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-stone-700">{t("noDocsYet")}</p>
-                  <p className="text-xs text-stone-400 mt-1">
-                    {t("noDocsPrompt")}
+                <div className="p-8 text-center bg-[#FAF7F2] rounded-2xl border border-dashed border-stone-300">
+                  <p className="text-sm font-semibold text-stone-700">
+                    {language === "hi"
+                      ? `${selectedMember.first_name} के लिए अभी कोई दस्तावेज़ नहीं है`
+                      : `No documents for ${selectedMember.first_name} yet`}
+                  </p>
+                  <p className="text-xs text-stone-500 mt-1">
+                    {language === "hi"
+                      ? "कागज़ात जोड़ने के लिए ऊपर '+ दस्तावेज़ जोड़ें' पर टैप करें।"
+                      : "Tap '+ Add Document' above to take a photo or upload."}
                   </p>
                 </div>
               )}
@@ -1118,29 +1166,36 @@ export default function SimpleFamilyTree() {
         </div>
       )}
 
-      {/* Document Viewer Modal */}
+      {/* Document Dominates Screen Viewer Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex flex-col p-2 sm:p-4">
-          <div className="flex items-center justify-between p-3 text-white">
-            <h4 className="font-bold text-sm truncate">{previewDoc.name}</h4>
-            <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex flex-col p-2 sm:p-4 animate-in fade-in">
+          {/* Simple Minimal Chrome Toolbar */}
+          <div className="flex items-center justify-between p-3 text-white max-w-5xl mx-auto w-full">
+            <div className="flex items-center gap-2 truncate">
+              <span className="text-lg">{getDocumentEmoji(previewDoc)}</span>
+              <h4 className="font-bold text-sm sm:text-base truncate">{previewDoc.name}</h4>
+            </div>
+
+            <div className="flex items-center gap-3 flex-shrink-0">
               <a
                 href={`/api/documents/${previewDoc.id}/download`}
-                className="px-3.5 py-1.5 rounded-xl bg-amber-800 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1"
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md transition-colors"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
+                <Download className="w-4 h-4" />
+                <span>{language === "hi" ? "डाउनलोड" : "Download"}</span>
               </a>
               <button
                 onClick={() => setPreviewDoc(null)}
-                className="p-2 text-stone-400 hover:text-white"
+                className="min-h-[44px] min-w-[44px] p-2 text-stone-300 hover:text-white rounded-xl hover:bg-white/10 flex items-center justify-center cursor-pointer"
+                title="Close"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
           </div>
 
-          <div className="flex-1 bg-white rounded-2xl overflow-hidden relative flex items-center justify-center p-2">
+          {/* Document Content Dominates */}
+          <div className="flex-1 bg-white rounded-2xl overflow-hidden relative flex items-center justify-center p-2 max-w-5xl mx-auto w-full shadow-2xl">
             {previewDoc.file_type.startsWith("image/") ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -1151,7 +1206,7 @@ export default function SimpleFamilyTree() {
             ) : (
               <iframe
                 src={`/api/documents/${previewDoc.id}/preview`}
-                className="w-full h-full"
+                className="w-full h-full border-0"
                 title={previewDoc.name}
               />
             )}

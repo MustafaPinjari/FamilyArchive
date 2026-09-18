@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth/session";
 import { Navbar } from "@/components/layout/Navbar";
 import { getDb } from "@/lib/db";
@@ -7,13 +6,9 @@ import { DocumentsClient } from "./DocumentsClient";
 
 export default async function DocumentsPage() {
   const user = await getSessionUser();
-  if (!user) {
-    redirect("/login");
-  }
-
   const db = getDb();
 
-  const isPrivileged = user.role === "SUPER_ADMIN" || user.role === "FAMILY_ADMIN";
+  const isPrivileged = user?.role === "SUPER_ADMIN" || user?.role === "FAMILY_ADMIN";
 
   let query = `
     SELECT d.*, fm.first_name, fm.last_name
@@ -22,7 +17,11 @@ export default async function DocumentsPage() {
     WHERE 1=1
   `;
   if (!isPrivileged) {
-    query += ` AND (d.visibility = 'FAMILY_ONLY' AND d.category != 'Medical' OR d.person_id = '${user.family_member_id || ""}')`;
+    if (user?.family_member_id) {
+      query += ` AND (d.visibility = 'FAMILY_ONLY' OR d.person_id = '${user.family_member_id}')`;
+    } else {
+      query += ` AND d.visibility = 'FAMILY_ONLY'`;
+    }
   }
   query += " ORDER BY d.uploaded_at DESC";
 
@@ -36,16 +35,16 @@ export default async function DocumentsPage() {
     .all() as FamilyMember[];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF7F2]">
+    <div className="min-h-screen flex flex-col bg-[#FAF7F2] text-[#1C1917] pb-24 md:pb-12">
       <Navbar initialUser={user} />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 tracking-tight">
-            Secure Document Vault
+            Family Document Cupboard
           </h1>
           <p className="text-sm text-stone-600 mt-1">
-            Private, encrypted repository for family identity proofs, property deeds, and certificates.
+            Browse family records by relative or by document type (Aadhaar, PAN, Property Papers, Certificates).
           </p>
         </div>
 

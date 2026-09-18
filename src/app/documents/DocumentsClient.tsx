@@ -8,38 +8,31 @@ import {
   Eye,
   Download,
   Trash2,
-  Calendar,
-  Shield,
-  Filter,
-  CheckCircle2,
-  AlertTriangle,
-  Clock,
+  X,
   User as UserIcon,
+  Plus,
+  ArrowLeft,
+  Lock,
 } from "lucide-react";
 import { DocumentCategory, FamilyDocument, FamilyMember, User } from "@/types";
-import { DocumentPreviewModal } from "@/components/documents/DocumentPreviewModal";
-import { DocumentUploadModal } from "@/components/documents/DocumentUploadModal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { useRouter } from "next/navigation";
+import { DocumentUploadModal } from "@/components/documents/DocumentUploadModal";
+import { useLanguage } from "@/lib/i18n";
 
 interface DocumentsClientProps {
   initialDocuments: (FamilyDocument & { first_name: string; last_name: string | null })[];
   members: FamilyMember[];
-  currentUser: User;
+  currentUser?: User | null;
 }
 
-const CATEGORIES: ("All" | DocumentCategory)[] = [
-  "All",
-  "Identity",
-  "Financial",
-  "Property",
-  "Education",
-  "Marriage & Family",
-  "Medical",
-  "Insurance",
-  "Legal",
-  "Vehicle",
-  "Other",
+const HUMAN_CATEGORIES = [
+  { id: "All", label: "All Papers", labelHi: "सभी दस्तावेज़", icon: "📁" },
+  { id: "Identity", label: "Identity (Aadhaar/PAN)", labelHi: "पहचान पत्र (आधार/पैन)", icon: "🪪" },
+  { id: "Property", label: "Property & Land (7/12)", labelHi: "संपत्ति व भूमि (7/12)", icon: "🏠" },
+  { id: "Marriage & Family", label: "Marriage & Family", labelHi: "विवाह व परिवार", icon: "💍" },
+  { id: "Medical", label: "Health & Medical", labelHi: "चिकित्सा व स्वास्थ्य", icon: "🏥" },
+  { id: "Education", label: "Education & Certificates", labelHi: "शिक्षा प्रमाण पत्र", icon: "🎓" },
+  { id: "Financial", label: "Financial & Tax", labelHi: "वित्तीय व बैंक", icon: "🏦" },
 ];
 
 export function DocumentsClient({
@@ -47,47 +40,30 @@ export function DocumentsClient({
   members,
   currentUser,
 }: DocumentsClientProps) {
-  const router = useRouter();
+  const { language, tName } = useLanguage();
   const [documents, setDocuments] = useState(initialDocuments);
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<"All" | DocumentCategory>("All");
-  const [selectedMemberId, setSelectedMemberId] = useState<string>("All");
-
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
+  const [discoveryMode, setDiscoveryMode] = useState<"by_person" | "by_type">("by_person");
+  const [selectedPersonId, setSelectedPersonId] = useState<string>("All");
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
 
   const [previewDoc, setPreviewDoc] = useState<FamilyDocument | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [docToDelete, setDocToDelete] = useState<FamilyDocument | null>(null);
 
-  const isAdmin = currentUser.role === "SUPER_ADMIN" || currentUser.role === "FAMILY_ADMIN";
+  const isAdmin = currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "FAMILY_ADMIN";
 
-  const refreshDocuments = async () => {
-    try {
-      const res = await fetch("/api/documents");
-      if (res.ok) {
-        const data = await res.json();
-        setDocuments(data.documents || []);
-        setSelectedIds([]);
-      }
-    } catch (err) {
-      console.error("Refresh error:", err);
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  const selectAll = () => {
-    if (selectedIds.length === filtered.length && filtered.length > 0) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(filtered.map((d) => d.id));
-    }
+  const getDocEmoji = (doc: FamilyDocument) => {
+    const n = doc.name.toLowerCase();
+    const c = doc.category.toLowerCase();
+    if (n.includes("aadhaar") || c.includes("identity")) return "🪪";
+    if (n.includes("pan")) return "💳";
+    if (n.includes("property") || n.includes("7/12") || c.includes("property")) return "🏠";
+    if (n.includes("marriage") || c.includes("marriage")) return "💍";
+    if (n.includes("medical") || n.includes("health") || c.includes("medical")) return "🏥";
+    if (n.includes("passport")) return "🛂";
+    if (n.includes("school") || n.includes("degree") || c.includes("education")) return "🎓";
+    return "📄";
   };
 
   const handleDeleteConfirm = async () => {
@@ -96,7 +72,6 @@ export function DocumentsClient({
       const res = await fetch(`/api/documents/${docToDelete.id}`, { method: "DELETE" });
       if (res.ok) {
         setDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
-        setSelectedIds((prev) => prev.filter((id) => id !== docToDelete.id));
         setDocToDelete(null);
       }
     } catch (err) {
@@ -104,288 +79,237 @@ export function DocumentsClient({
     }
   };
 
-  const handleBulkDeleteConfirm = async () => {
-    if (selectedIds.length === 0) return;
-    setBulkDeleting(true);
-    try {
-      const res = await fetch("/api/documents/bulk-delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentIds: selectedIds }),
-      });
-      if (res.ok) {
-        setDocuments((prev) => prev.filter((d) => !selectedIds.includes(d.id)));
-        setSelectedIds([]);
-        setShowBulkConfirm(false);
-      }
-    } catch (err) {
-      console.error("Bulk delete error:", err);
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
-
+  // Filtered documents
   const filtered = documents.filter((doc) => {
+    if (selectedPersonId !== "All" && doc.person_id !== selectedPersonId) return false;
     if (selectedCategory !== "All" && doc.category !== selectedCategory) return false;
-    if (selectedMemberId !== "All" && doc.person_id !== selectedMemberId) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       const matchName = doc.name.toLowerCase().includes(q);
       const matchCat = doc.category.toLowerCase().includes(q);
       const matchPerson = doc.first_name.toLowerCase().includes(q);
-      const matchNumber = doc.document_number && doc.document_number.toLowerCase().includes(q);
-      return matchName || matchCat || matchPerson || matchNumber;
+      return matchName || matchCat || matchPerson;
     }
     return true;
   });
 
+  // Calculate document counts per member
+  const memberCounts: Record<string, number> = {};
+  for (const d of documents) {
+    memberCounts[d.person_id] = (memberCounts[d.person_id] || 0) + 1;
+  }
+
+  // Members who have documents or are prominent
+  const activeMembers = members.filter((m) => (memberCounts[m.id] || 0) > 0 || m.generation <= 2);
+
   return (
     <div className="space-y-6">
-      {/* Top action & filter bar */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          {/* Search */}
-          <div className="relative flex-1 max-w-md">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search vault documents by title, number, or relative..."
-              className="w-full pl-9 pr-4 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-amber-600 focus:bg-white"
-            />
+      {/* Search & Top Action Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Natural Search */}
+        <div className="relative flex-1 max-w-md">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
+            <Search className="w-4 h-4" />
           </div>
-
-          {/* Member Filter & Upload CTA */}
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedMemberId}
-              onChange={(e) => setSelectedMemberId(e.target.value)}
-              className="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs sm:text-sm text-stone-800 focus:outline-none focus:border-amber-600"
-            >
-              <option value="All">All Relatives</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
-                </option>
-              ))}
-            </select>
-
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search papers (Aadhaar, Mukhtar, Property)..."
+            className="w-full pl-10 pr-4 py-2.5 bg-white border border-stone-300 rounded-xl text-sm placeholder-stone-400 focus:outline-none focus:border-amber-900 shadow-2xs"
+          />
+          {search && (
             <button
-              onClick={() => setUploadModalOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-2xl text-xs sm:text-sm font-bold shadow-sm transition-colors whitespace-nowrap cursor-pointer"
+              onClick={() => setSearch("")}
+              className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-600 cursor-pointer"
             >
-              <Upload className="w-4 h-4" />
-              <span>+ Bulk / Single Upload</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Category Pills & Select All Button */}
-        <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-100">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 flex-1">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedCategory === cat
-                    ? "bg-amber-800 text-white shadow-xs"
-                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {filtered.length > 0 && (
-            <button
-              onClick={selectAll}
-              className="text-xs font-bold text-amber-900 bg-amber-100/70 hover:bg-amber-200/80 px-3 py-1 rounded-xl transition-colors whitespace-nowrap cursor-pointer flex-shrink-0"
-            >
-              {selectedIds.length === filtered.length ? "Deselect All" : "Select All"}
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
+
+        {/* Add Document Action (if authenticated) */}
+        {currentUser && (
+          <button
+            onClick={() => setUploadModalOpen(true)}
+            className="min-h-[44px] px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 shadow-2xs cursor-pointer transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>+ Add Document</span>
+          </button>
+        )}
       </div>
 
-      {/* Sticky Bulk Action Floating Banner */}
-      {selectedIds.length > 0 && (
-        <div className="sticky top-16 z-30 bg-stone-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-xl flex items-center justify-between gap-2 animate-in slide-in-from-top duration-200 border border-stone-700">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <span className="text-xs sm:text-sm font-bold bg-amber-600 text-white px-2.5 py-0.5 rounded-full">
-              {selectedIds.length} Selected
-            </span>
-            <span className="hidden sm:inline text-xs text-stone-300">
-              of {filtered.length} documents
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSelectedIds([])}
-              className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-semibold text-stone-300 transition-colors cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => setShowBulkConfirm(true)}
-              disabled={bulkDeleting}
-              className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Bulk Delete ({selectedIds.length})</span>
-            </button>
-          </div>
+      {/* Two Natural Pathways: By Person OR By Document Type */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+          <button
+            onClick={() => {
+              setDiscoveryMode("by_person");
+              setSelectedCategory("All");
+            }}
+            className={`min-h-[40px] px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+              discoveryMode === "by_person"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
+            }`}
+          >
+            👤 By Relative
+          </button>
+          <button
+            onClick={() => {
+              setDiscoveryMode("by_type");
+              setSelectedPersonId("All");
+            }}
+            className={`min-h-[40px] px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors cursor-pointer ${
+              discoveryMode === "by_type"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:text-stone-900 hover:bg-stone-200/60"
+            }`}
+          >
+            🗂️ By Document Type
+          </button>
         </div>
-      )}
 
-      {/* Document Cards Grid */}
+        {/* Path A: Relative Selector Pills */}
+        {discoveryMode === "by_person" && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+            <button
+              onClick={() => setSelectedPersonId("All")}
+              className={`min-h-[38px] px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                selectedPersonId === "All"
+                  ? "bg-amber-900 text-white"
+                  : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-50"
+              }`}
+            >
+              {language === "hi" ? "सभी सदस्य" : "All Relatives"} ({documents.length})
+            </button>
+            {activeMembers.map((m) => {
+              const count = memberCounts[m.id] || 0;
+              const isSel = selectedPersonId === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setSelectedPersonId(m.id)}
+                  className={`min-h-[38px] px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors flex items-center gap-1.5 ${
+                    isSel
+                      ? "bg-amber-900 text-white"
+                      : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-50"
+                  }`}
+                >
+                  <span>{tName(m.first_name)}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSel ? "bg-white/20" : "bg-stone-100 text-stone-600"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Path B: Document Type Pills */}
+        {discoveryMode === "by_type" && (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none">
+            {HUMAN_CATEGORIES.map((cat) => {
+              const isSel = selectedCategory === cat.id;
+              const count =
+                cat.id === "All"
+                  ? documents.length
+                  : documents.filter((d) => d.category === cat.id).length;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`min-h-[38px] px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors flex items-center gap-1.5 ${
+                    isSel
+                      ? "bg-amber-900 text-white"
+                      : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-50"
+                  }`}
+                >
+                  <span>{cat.icon}</span>
+                  <span>{language === "hi" ? cat.labelHi : cat.label}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSel ? "bg-white/20" : "bg-stone-100 text-stone-600"}`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Human-Readable Document List (Not a generic card grid) */}
       {filtered.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="divide-y divide-stone-200/90 bg-white rounded-2xl border border-stone-200/90 shadow-2xs overflow-hidden">
           {filtered.map((doc) => {
-            // Expiry status
-            let expiryStatus: "valid" | "expiring_soon" | "expired" | null = null;
-            if (doc.expiry_date) {
-              const expTime = new Date(doc.expiry_date).getTime();
-              const daysLeft = (expTime - Date.now()) / (1000 * 60 * 60 * 24);
-              if (daysLeft < 0) expiryStatus = "expired";
-              else if (daysLeft <= 60) expiryStatus = "expiring_soon";
-              else expiryStatus = "valid";
-            }
-
             const canDelete =
-              isAdmin || currentUser.family_member_id === doc.person_id;
-            const isSelected = selectedIds.includes(doc.id);
+              isAdmin || (currentUser && currentUser.family_member_id === doc.person_id);
 
             return (
               <div
                 key={doc.id}
-                className={`bg-white p-5 rounded-2xl border transition-all flex flex-col justify-between ${
-                  isSelected
-                    ? "border-amber-600 ring-2 ring-amber-600/30 bg-amber-50/20 shadow-md"
-                    : "border-stone-200 hover:border-amber-400 shadow-xs hover:shadow-md"
-                }`}
+                className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50/70 transition-colors"
               >
-                <div>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Selection Checkbox */}
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleSelect(doc.id)}
-                        className="w-4 h-4 rounded text-amber-800 focus:ring-amber-600 border-stone-300 cursor-pointer flex-shrink-0"
-                        title="Select document"
+                <div className="flex items-center gap-3.5 min-w-0">
+                  {/* Thumbnail / Real-World Emblem */}
+                  <div
+                    onClick={() => setPreviewDoc(doc)}
+                    className="w-13 h-13 rounded-xl bg-stone-100 border border-stone-200 flex items-center justify-center text-2xl flex-shrink-0 cursor-pointer overflow-hidden hover:ring-2 hover:ring-amber-500 shadow-2xs"
+                    title="Click to view"
+                  >
+                    {doc.file_type?.startsWith("image/") ? (
+                      <img
+                        src={`/api/documents/${doc.id}/preview`}
+                        alt={doc.name}
+                        className="w-full h-full object-cover"
                       />
-
-                      {/* Interactive Document Thumbnail Preview */}
-                      <div
-                        onClick={() => setPreviewDoc(doc)}
-                        className="cursor-pointer flex-shrink-0 group"
-                        title="Click to preview document"
-                      >
-                        {doc.file_type?.startsWith("image/") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={`/api/documents/${doc.id}/preview`}
-                            alt={doc.name}
-                            className="w-12 h-12 rounded-xl object-cover border border-amber-200 shadow-2xs group-hover:ring-2 group-hover:ring-amber-500 transition-all"
-                          />
-                        ) : doc.file_type?.includes("pdf") ? (
-                          <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-700 shadow-2xs group-hover:bg-rose-100 transition-colors">
-                            <FileText className="w-5 h-5 text-rose-600" />
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-rose-800">PDF</span>
-                          </div>
-                        ) : (
-                          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-amber-800 shadow-2xs group-hover:bg-amber-100 transition-colors">
-                            <FileText className="w-5 h-5 text-amber-700" />
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DOC</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="truncate">
-                        <h4
-                          onClick={() => setPreviewDoc(doc)}
-                          className="font-semibold text-stone-900 text-sm truncate hover:text-amber-800 cursor-pointer"
-                        >
-                          {doc.name}
-                        </h4>
-                        <p className="text-xs text-stone-500 flex items-center gap-1.5 mt-0.5">
-                          <span className="font-medium text-amber-900">{doc.first_name}</span>
-                          <span>•</span>
-                          <span>{doc.category}</span>
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Expiry Pill */}
-                    {expiryStatus && (
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                          expiryStatus === "expired"
-                            ? "bg-rose-100 text-rose-800"
-                            : expiryStatus === "expiring_soon"
-                            ? "bg-amber-100 text-amber-900"
-                            : "bg-emerald-100 text-emerald-800"
-                        }`}
-                      >
-                        {expiryStatus === "expired"
-                          ? "Expired"
-                          : expiryStatus === "expiring_soon"
-                          ? "Expiring Soon"
-                          : "Valid"}
-                      </span>
+                    ) : (
+                      <span>{getDocEmoji(doc)}</span>
                     )}
                   </div>
 
-                  {/* Metadata preview */}
-                  <div className="mt-4 pt-3 border-t border-stone-100 text-xs text-stone-500 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span>Size: {(doc.file_size / 1024).toFixed(0)} KB</span>
-                      <span>{new Date(doc.uploaded_at).toLocaleDateString()}</span>
-                    </div>
-                    {doc.document_number && (
-                      <div className="truncate text-stone-600">
-                        <strong>No:</strong> {doc.document_number}
-                      </div>
-                    )}
-                    {doc.expiry_date && (
-                      <div className="flex items-center gap-1 text-stone-600">
-                        <Calendar className="w-3 h-3 text-stone-400" />
-                        <span>Expires: {new Date(doc.expiry_date).toLocaleDateString()}</span>
-                      </div>
-                    )}
+                  <div className="truncate">
+                    <h4
+                      onClick={() => setPreviewDoc(doc)}
+                      className="font-bold text-stone-900 text-sm sm:text-base truncate cursor-pointer hover:text-amber-900"
+                    >
+                      {doc.name}
+                    </h4>
+                    <p className="text-xs text-stone-500 mt-0.5 flex items-center gap-2">
+                      <span className="font-semibold text-amber-950 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60">
+                        {tName(doc.first_name)}
+                      </span>
+                      <span>•</span>
+                      <span>{doc.category}</span>
+                      <span>•</span>
+                      <span>{(doc.file_size / 1024).toFixed(0)} KB</span>
+                    </p>
                   </div>
                 </div>
 
-                {/* Actions Footer */}
-                <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setPreviewDoc(doc)}
-                      className="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Preview</span>
-                    </button>
+                {/* Obvious Touch Controls (Fitts's Law: 48px+ Touch) */}
+                <div className="flex items-center gap-2.5 self-end sm:self-center flex-shrink-0">
+                  <button
+                    onClick={() => setPreviewDoc(doc)}
+                    className="min-h-[48px] px-4 py-2 rounded-xl bg-amber-900 hover:bg-amber-950 text-white font-semibold text-xs sm:text-sm flex items-center gap-1.5 shadow-2xs cursor-pointer transition-colors"
+                  >
+                    <Eye className="w-4 h-4" />
+                    <span>OPEN</span>
+                  </button>
 
-                    <a
-                      href={`/api/documents/${doc.id}/download`}
-                      className="p-1.5 rounded-xl text-stone-600 hover:text-amber-800 hover:bg-amber-50 transition-colors"
-                      title="Download"
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
-                  </div>
+                  <a
+                    href={`/api/documents/${doc.id}/download`}
+                    className="min-h-[48px] min-w-[48px] px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 flex items-center justify-center border border-stone-200 cursor-pointer transition-colors"
+                    title="Download document"
+                  >
+                    <Download className="w-4 h-4" />
+                  </a>
 
                   {canDelete && (
                     <button
                       onClick={() => setDocToDelete(doc)}
-                      className="p-1.5 rounded-xl text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Delete Document"
+                      className="min-h-[48px] min-w-[48px] p-2 text-stone-400 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer flex items-center justify-center"
+                      title="Delete"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -396,61 +320,84 @@ export function DocumentsClient({
           })}
         </div>
       ) : (
-        /* Empty State */
-        <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center max-w-lg mx-auto">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-800 flex items-center justify-center mx-auto mb-4 border border-amber-200">
-            <FileText className="w-8 h-8" />
-          </div>
-          <h3 className="text-lg font-serif font-bold text-stone-900">No documents found</h3>
-          <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-            Nothing here yet. Let&apos;s preserve this part of our family story by uploading important records.
+        <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-stone-300">
+          <FileText className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+          <p className="text-base font-semibold text-stone-800">No documents found</p>
+          <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+            {search
+              ? "Try searching for a different relative name or paper type."
+              : "No documents stored under this category yet."}
           </p>
-          {currentUser.role !== "VIEWER" && (
-            <button
-              onClick={() => setUploadModalOpen(true)}
-              className="mt-5 px-5 py-2.5 rounded-xl bg-amber-800 text-white text-xs font-semibold shadow-sm hover:bg-amber-900 transition-colors inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Upload className="w-4 h-4" />
-              <span>Bulk / Single Upload</span>
-            </button>
-          )}
         </div>
       )}
 
-      {/* Document Preview Modal */}
-      <DocumentPreviewModal
-        document={previewDoc}
-        onClose={() => setPreviewDoc(null)}
-      />
+      {/* Full-Screen Document Dominates Screen Viewer Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex flex-col p-2 sm:p-4 animate-in fade-in">
+          {/* Simple Minimal Chrome Toolbar */}
+          <div className="flex items-center justify-between p-3 text-white max-w-5xl mx-auto w-full">
+            <div className="flex items-center gap-2 truncate">
+              <span className="text-lg">{getDocEmoji(previewDoc)}</span>
+              <h4 className="font-bold text-sm sm:text-base truncate">{previewDoc.name}</h4>
+            </div>
 
-      {/* Document Upload Modal */}
-      <DocumentUploadModal
-        isOpen={uploadModalOpen}
-        onClose={() => setUploadModalOpen(false)}
-        members={members}
-        onSuccess={refreshDocuments}
-      />
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <a
+                href={`/api/documents/${previewDoc.id}/download`}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download</span>
+              </a>
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="min-h-[44px] min-w-[44px] p-2 text-stone-300 hover:text-white rounded-xl hover:bg-white/10 flex items-center justify-center cursor-pointer"
+                title="Close"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
 
-      {/* Single Delete Confirmation Dialog */}
+          {/* Document Content Dominates */}
+          <div className="flex-1 bg-white rounded-2xl overflow-hidden relative flex items-center justify-center p-2 max-w-5xl mx-auto w-full shadow-2xl">
+            {previewDoc.file_type.startsWith("image/") ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/documents/${previewDoc.id}/preview`}
+                alt={previewDoc.name}
+                className="max-h-full max-w-full object-contain"
+              />
+            ) : (
+              <iframe
+                src={`/api/documents/${previewDoc.id}/preview`}
+                className="w-full h-full border-0"
+                title={previewDoc.name}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Upload Document Modal */}
+      {uploadModalOpen && (
+        <DocumentUploadModal
+          isOpen={uploadModalOpen}
+          onClose={() => setUploadModalOpen(false)}
+          onSuccess={() => window.location.reload()}
+          members={members}
+        />
+      )}
+
+      {/* Delete Confirmation */}
       <ConfirmDialog
         isOpen={Boolean(docToDelete)}
-        title="Delete this document?"
-        message={`Are you sure you want to permanently delete "${docToDelete?.name}"? This action cannot be undone.`}
+        title="Remove Document"
+        message={`Are you sure you want to delete "${docToDelete?.name}"?`}
         confirmText="Delete Document"
         isDestructive={true}
         onConfirm={handleDeleteConfirm}
         onCancel={() => setDocToDelete(null)}
-      />
-
-      {/* Bulk Delete Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={showBulkConfirm}
-        title={`Delete ${selectedIds.length} documents?`}
-        message={`Are you sure you want to permanently delete these ${selectedIds.length} selected document(s)? This action cannot be undone.`}
-        confirmText={`Delete ${selectedIds.length} Documents`}
-        isDestructive={true}
-        onConfirm={handleBulkDeleteConfirm}
-        onCancel={() => setShowBulkConfirm(false)}
       />
     </div>
   );

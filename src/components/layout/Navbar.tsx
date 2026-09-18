@@ -3,19 +3,17 @@
 import React, { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Home,
   GitFork,
-  Users,
   FileText,
   Camera,
-  Search,
   ShieldCheck,
   LogOut,
-  Menu,
-  X,
   Lock,
+  Globe,
 } from "lucide-react";
 import { User } from "@/types";
-import { GlobalSearchModal } from "../search/GlobalSearchModal";
+import { useLanguage } from "@/lib/i18n";
 
 interface NavbarProps {
   initialUser?: User | null;
@@ -25,8 +23,7 @@ export function Navbar({ initialUser }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(initialUser || null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const { language, toggleLanguage, t } = useLanguage();
 
   useEffect(() => {
     if (!initialUser) {
@@ -52,75 +49,81 @@ export function Navbar({ initialUser }: NavbarProps) {
 
   const isAdmin = user?.role === "SUPER_ADMIN" || user?.role === "FAMILY_ADMIN";
 
-  const navLinks = [
-    { href: "/", label: "Family Tree", icon: GitFork },
-    { href: "/members", label: "Relatives", icon: Users },
-    { href: "/documents", label: "Document Vault", icon: FileText },
-    { href: "/photos", label: "Photos", icon: Camera },
+  const navItems = [
+    { href: "/", label: t("appName"), shortLabel: "Home", icon: Home },
+    { href: "/family-tree", label: t("navTree"), shortLabel: "Family", icon: GitFork },
+    { href: "/documents", label: t("navVault"), shortLabel: "Documents", icon: FileText },
+    { href: "/photos", label: t("navPhotos"), shortLabel: "Photos", icon: Camera },
   ];
 
   return (
     <>
-      <header className="sticky top-0 z-40 bg-stone-900 text-stone-100 border-b border-stone-800 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
+      {/* Desktop Header */}
+      <header className="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur-md border-b border-stone-200/80 shadow-2xs">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-15">
             {/* Logo */}
-            <div className="flex items-center gap-3">
-              <a
-                href="/"
-                className="flex items-center gap-2.5 font-serif font-bold text-base sm:text-lg text-amber-300 hover:text-amber-200 transition-colors"
-              >
-                <span className="text-xl">🌳</span>
-                <span>Our Family Archive</span>
-              </a>
-            </div>
+            <a
+              href="/"
+              className="flex items-center gap-2.5 font-serif font-bold text-lg text-stone-900 hover:text-amber-900 transition-colors"
+            >
+              <img
+                src="/logo.png"
+                alt="Family Logo"
+                className="w-8 h-8 rounded-lg object-contain"
+              />
+              <span className="tracking-tight">{t("appName")}</span>
+            </a>
 
-            {/* Desktop Navigation Links */}
-            <nav className="hidden md:flex items-center space-x-1">
-              {navLinks.map((link) => {
-                const Icon = link.icon;
-                const isActive = pathname === link.href;
+            {/* Desktop Navigation Links (Human Mental Model) */}
+            <nav className="hidden md:flex items-center space-x-1.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive =
+                  item.href === "/"
+                    ? pathname === "/"
+                    : pathname.startsWith(item.href);
                 return (
                   <a
-                    key={link.href}
-                    href={link.href}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors min-h-[40px] ${
                       isActive
-                        ? "bg-amber-600/25 text-amber-300 border border-amber-600/40"
-                        : "text-stone-300 hover:text-white hover:bg-stone-800/70"
+                        ? "bg-amber-900 text-white shadow-2xs"
+                        : "text-stone-700 hover:text-stone-900 hover:bg-stone-200/60"
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5 text-amber-400" />
-                    <span>{link.label}</span>
+                    <Icon className="w-4 h-4" />
+                    <span>{item.label}</span>
                   </a>
                 );
               })}
             </nav>
 
-            {/* Right side: Search & Admin Controls */}
-            <div className="hidden md:flex items-center gap-2.5">
+            {/* Right Controls: Language & Discreet Admin Access */}
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setSearchModalOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-stone-800/80 hover:bg-stone-800 text-stone-300 text-xs border border-stone-700 transition-colors"
-                title="Global Search"
+                onClick={toggleLanguage}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100/70 hover:bg-amber-200/80 text-amber-950 border border-amber-300 transition-colors cursor-pointer min-h-[36px]"
+                title="Switch Language / भाषा बदलें"
               >
-                <Search className="w-3.5 h-3.5 text-amber-400" />
-                <span>Search</span>
+                <Globe className="w-3.5 h-3.5 text-amber-800" />
+                <span>{language === "en" ? "हिंदी" : "English"}</span>
               </button>
 
               {isAdmin ? (
-                <div className="flex items-center gap-2 pl-2 border-l border-stone-800">
+                <div className="flex items-center gap-1.5 pl-1.5 border-l border-stone-200">
                   <a
                     href="/admin"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold transition-colors min-h-[36px]"
                   >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Admin Panel</span>
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Admin</span>
                   </a>
                   <button
                     onClick={handleLogout}
-                    className="p-1.5 rounded-lg text-stone-400 hover:text-rose-300 hover:bg-rose-950/40 transition-colors"
-                    title="Log out from Admin"
+                    className="p-2 rounded-xl text-stone-500 hover:text-rose-700 hover:bg-rose-50 transition-colors cursor-pointer min-h-[36px] min-w-[36px] flex items-center justify-center"
+                    title="Sign Out"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                   </button>
@@ -128,102 +131,42 @@ export function Navbar({ initialUser }: NavbarProps) {
               ) : (
                 <a
                   href="/login"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white text-xs font-medium border border-stone-700 transition-colors"
+                  className="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-xl text-stone-600 hover:text-stone-900 hover:bg-stone-200/50 text-xs font-medium transition-colors min-h-[36px]"
+                  title="Family Administrator Sign In"
                 >
-                  <Lock className="w-3 h-3 text-stone-400" />
-                  <span>Admin Login</span>
+                  <Lock className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Admin</span>
                 </a>
               )}
-            </div>
-
-            {/* Mobile Actions */}
-            <div className="flex md:hidden items-center gap-1.5">
-              <button
-                onClick={() => setSearchModalOpen(true)}
-                className="p-2 rounded-lg text-stone-300 hover:text-white hover:bg-stone-800"
-                aria-label="Search"
-              >
-                <Search className="w-4 h-4 text-amber-400" />
-              </button>
-              <button
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="p-2 rounded-lg text-stone-300 hover:text-white hover:bg-stone-800"
-                aria-label="Toggle Navigation Menu"
-              >
-                {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-              </button>
             </div>
           </div>
         </div>
-
-        {/* Mobile Dropdown */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-stone-800 bg-stone-900 px-4 py-3 space-y-1.5 animate-in slide-in-from-top-2">
-            {navLinks.map((link) => {
-              const Icon = link.icon;
-              const isActive = pathname === link.href;
-              return (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                    isActive
-                      ? "bg-amber-600/25 text-amber-300 border border-amber-600/40"
-                      : "text-stone-300 hover:bg-stone-800"
-                  }`}
-                >
-                  <Icon className="w-4 h-4 text-amber-400" />
-                  <span>{link.label}</span>
-                </a>
-              );
-            })}
-
-            <div className="pt-2 mt-2 border-t border-stone-800">
-              {isAdmin ? (
-                <div className="flex items-center justify-between">
-                  <a
-                    href="/admin"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-2 text-xs font-semibold text-amber-300 py-1"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Admin Panel</span>
-                  </a>
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-1 text-xs text-rose-400 py-1"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>Logout</span>
-                  </button>
-                </div>
-              ) : (
-                <a
-                  href="/login"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-2 text-xs text-stone-400 hover:text-white py-1"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Admin Sign In</span>
-                </a>
-              )}
-            </div>
-          </div>
-        )}
       </header>
 
-      {/* Global Search Modal */}
-      <GlobalSearchModal
-        isOpen={searchModalOpen}
-        onClose={() => setSearchModalOpen(false)}
-        onSelectMember={(memberId) => {
-          router.push(`/members/${memberId}`);
-        }}
-        onSelectDocument={(doc) => {
-          router.push(`/documents?id=${doc.id}`);
-        }}
-      />
+      {/* Mobile Bottom Navigation Bar (Fitts's Law: 48px+ Touch Areas) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200/90 shadow-lg px-2 py-1 flex items-center justify-around">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(item.href);
+          return (
+            <a
+              key={item.href}
+              href={item.href}
+              className={`flex-1 flex flex-col items-center justify-center py-2 px-1 min-h-[50px] rounded-xl transition-colors ${
+                isActive
+                  ? "text-amber-900 font-bold"
+                  : "text-stone-500 hover:text-stone-900 font-medium"
+              }`}
+            >
+              <Icon className={`w-5 h-5 ${isActive ? "text-amber-900 stroke-[2.5]" : "text-stone-400"}`} />
+              <span className="text-[11px] mt-0.5 tracking-tight">{item.shortLabel}</span>
+            </a>
+          );
+        })}
+      </nav>
     </>
   );
 }

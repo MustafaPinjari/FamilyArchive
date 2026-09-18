@@ -12,6 +12,20 @@ export async function GET(
     const { id } = await props.params;
     const decodedId = decodeURIComponent(id);
 
+    // If ID directly starts with data:
+    if (decodedId.startsWith("data:")) {
+      const parts = decodedId.split(",");
+      const mime = parts[0]?.match(/:(.*?);/)?.[1] || "image/jpeg";
+      const buffer = Buffer.from(parts[1] || "", "base64");
+      return new Response(buffer, {
+        headers: {
+          "Content-Type": mime,
+          "Cache-Control": "public, max-age=86400",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    }
+
     // If ID directly starts with gdrive:
     if (decodedId.startsWith("gdrive:")) {
       const gdriveFileId = decodedId.replace("gdrive:", "");

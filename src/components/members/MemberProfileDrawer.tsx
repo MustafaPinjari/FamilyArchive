@@ -80,12 +80,13 @@ export function MemberProfileDrawer({
         body: formData,
       });
       const resJson = await res.json();
-      if (res.ok && resJson.photo_url) {
+      const newPhotoUrl = resJson.photo_url || resJson.photoUrl;
+      if (res.ok && newPhotoUrl) {
         setData((prev) =>
           prev
             ? {
                 ...prev,
-                person: { ...prev.person, photo_url: resJson.photo_url },
+                person: { ...prev.person, photo_url: newPhotoUrl },
               }
             : null
         );

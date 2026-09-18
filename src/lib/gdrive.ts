@@ -160,6 +160,7 @@ export async function uploadFileToDrive({
       body: stream,
     },
     fields: "id, name, mimeType, size",
+    supportsAllDrives: true,
   });
 
   const file = response.data;

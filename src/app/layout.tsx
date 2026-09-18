@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Our Family Archive — Private Digital Heritage & Vault",
   description: "Private digital family tree, historical archive, and secure document vault.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
   robots: {
     index: false,
     follow: false,

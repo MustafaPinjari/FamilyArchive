@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import {
-  ShieldCheck,
   Users,
   GitFork,
   FileText,
@@ -11,7 +10,6 @@ import {
   Settings,
   Download,
   Trash2,
-  Crown,
   AlertCircle,
   CheckCircle2,
   Loader2,
@@ -20,12 +18,13 @@ import {
   HardDrive,
   Cloud,
   Check,
-  Key,
-  ExternalLink,
-  ArrowRight,
-  UploadCloud,
   Eye,
   X,
+  Camera,
+  ArrowRight,
+  ArrowLeft,
+  Shield,
+  Upload,
 } from "lucide-react";
 import { AuditLog, FamilyDocument, FamilyMember, User } from "@/types";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -47,9 +46,9 @@ export function AdminClient({
   initialSettings,
 }: AdminClientProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "members" | "relationships" | "documents" | "users" | "audit" | "settings" | "gdrive"
-  >("overview");
+  const [activeTask, setActiveTask] = useState<
+    "tasks" | "add_member" | "add_doc" | "relationships" | "documents" | "access" | "activity" | "settings"
+  >("tasks");
 
   const [members, setMembers] = useState(initialMembers);
   const [users, setUsers] = useState(initialUsers);
@@ -60,14 +59,15 @@ export function AdminClient({
   const [previewDoc, setPreviewDoc] = useState<FamilyDocument | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // New Member Form State
+  // Guided Add Member State
+  const [memberStep, setMemberStep] = useState<1 | 2 | 3 | 4>(1);
   const [newMember, setNewMember] = useState({
     first_name: "",
     middle_name: "",
-    last_name: "",
+    last_name: "Pinjari",
     nickname: "",
     gender: "male" as "male" | "female",
-    generation: 3,
+    generation: 2,
     display_order: 1,
     family_role: "",
     bio: "",
@@ -79,6 +79,14 @@ export function AdminClient({
   });
   const [savingMember, setSavingMember] = useState(false);
 
+  // Guided Add Document State
+  const [docPersonId, setDocPersonId] = useState(members[0]?.id || "");
+  const [docType, setDocType] = useState("Aadhaar Card");
+  const [docCategory, setDocCategory] = useState("Identity");
+  const [docVisibility, setDocVisibility] = useState<"FAMILY_ONLY" | "PRIVATE">("FAMILY_ONLY");
+  const [docFiles, setDocFiles] = useState<File[]>([]);
+  const [savingDoc, setSavingDoc] = useState(false);
+
   // Relationship Editor State
   const [relPersonId, setRelPersonId] = useState(members[0]?.id || "");
   const [relFatherId, setRelFatherId] = useState("");
@@ -86,7 +94,7 @@ export function AdminClient({
   const [relSpouseId, setRelSpouseId] = useState("");
   const [savingRel, setSavingRel] = useState(false);
 
-  // New User Form State
+  // User Accounts State
   const [newUser, setNewUser] = useState({
     username: "",
     email: "",
@@ -102,7 +110,17 @@ export function AdminClient({
   const [familyLeadId, setFamilyLeadId] = useState(settings.family_lead_id || "akhtar");
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Confirm delete doc dialog
+  // Google Drive State
+  const [gdriveEmail, setGdriveEmail] = useState(settings.gdrive_service_account_email || "");
+  const [gdrivePrivateKey, setGdrivePrivateKey] = useState(settings.gdrive_private_key || "");
+  const [gdriveFolderId, setGdriveFolderId] = useState(settings.gdrive_folder_id || "");
+  const [testingGDrive, setTestingGDrive] = useState(false);
+  const [gdriveTestResult, setGdriveTestResult] = useState<{ success: boolean; folderName?: string; message?: string } | null>(null);
+  const [syncingGDrive, setSyncingGDrive] = useState(false);
+  const [importingGDrive, setImportingGDrive] = useState(false);
+  const [savingGDrive, setSavingGDrive] = useState(false);
+
+  // Document Deletion Confirm
   const [docToDelete, setDocToDelete] = useState<FamilyDocument | null>(null);
 
   const showStatus = (type: "success" | "error", text: string) => {
@@ -110,7 +128,7 @@ export function AdminClient({
     setTimeout(() => setStatusMessage(null), 5000);
   };
 
-  // Add Member
+  // Add Member Submission
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMember.first_name.trim()) {
@@ -126,16 +144,16 @@ export function AdminClient({
         body: JSON.stringify(newMember),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add member.");
+      if (!res.ok) throw new Error(data.error || "Could not add family member.");
 
-      showStatus("success", `Added ${newMember.first_name} to the family archive!`);
+      showStatus("success", `Added ${newMember.first_name} to the family!`);
       setNewMember({
         first_name: "",
         middle_name: "",
-        last_name: "",
+        last_name: "Pinjari",
         nickname: "",
         gender: "male",
-        generation: 3,
+        generation: 2,
         display_order: 1,
         family_role: "",
         bio: "",
@@ -145,13 +163,9 @@ export function AdminClient({
         mother_id: "",
         spouse_id: "",
       });
-
-      // Refresh members
-      const mRes = await fetch("/api/members");
-      if (mRes.ok) {
-        const mData = await mRes.json();
-        setMembers(mData.members || []);
-      }
+      setMemberStep(1);
+      setActiveTask("tasks");
+      router.refresh();
     } catch (err: unknown) {
       const errorObj = err as Error;
       showStatus("error", errorObj.message);
@@ -160,11 +174,45 @@ export function AdminClient({
     }
   };
 
+  // Add Document Submission
+  const handleAddDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (docFiles.length === 0 || !docPersonId) {
+      showStatus("error", "Please select a file.");
+      return;
+    }
+
+    setSavingDoc(true);
+    try {
+      const formData = new FormData();
+      docFiles.forEach((f) => formData.append("files", f));
+      formData.append("person_id", docPersonId);
+      formData.append("name", docType);
+      formData.append("category", docCategory);
+      formData.append("visibility", docVisibility);
+
+      const res = await fetch("/api/documents/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not upload document.");
+
+      showStatus("success", `Added "${docType}" to documents!`);
+      setDocFiles([]);
+      setActiveTask("documents");
+      router.refresh();
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      showStatus("error", errorObj.message);
+    } finally {
+      setSavingDoc(false);
+    }
+  };
+
   // Update Relationships
   const handleUpdateRelationships = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!relPersonId) return;
-
     setSavingRel(true);
     try {
       const res = await fetch("/api/admin/relationships", {
@@ -179,8 +227,8 @@ export function AdminClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update relationships.");
-
-      showStatus("success", "Kinship relationships updated successfully!");
+      showStatus("success", "Family connections updated successfully!");
+      router.refresh();
     } catch (err: unknown) {
       const errorObj = err as Error;
       showStatus("error", errorObj.message);
@@ -189,14 +237,9 @@ export function AdminClient({
     }
   };
 
-  // Create User
+  // Create User Account
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.username.trim() || !newUser.password) {
-      showStatus("error", "Username and password are required.");
-      return;
-    }
-
     setSavingUser(true);
     try {
       const res = await fetch("/api/admin/users", {
@@ -206,22 +249,9 @@ export function AdminClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create user.");
-
-      showStatus("success", `User account "${newUser.username}" created successfully!`);
-      setNewUser({
-        username: "",
-        email: "",
-        password: "",
-        role: "FAMILY_MEMBER",
-        family_member_id: "",
-      });
-
-      // Refresh users
-      const uRes = await fetch("/api/admin/users");
-      if (uRes.ok) {
-        const uData = await uRes.json();
-        setUsers(uData.users || []);
-      }
+      showStatus("success", `Created family access account for ${newUser.username}!`);
+      setNewUser({ username: "", email: "", password: "", role: "FAMILY_MEMBER", family_member_id: "" });
+      router.refresh();
     } catch (err: unknown) {
       const errorObj = err as Error;
       showStatus("error", errorObj.message);
@@ -230,7 +260,7 @@ export function AdminClient({
     }
   };
 
-  // Update Settings
+  // Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSettings(true);
@@ -246,8 +276,8 @@ export function AdminClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to save settings.");
-
-      showStatus("success", "Family settings saved successfully!");
+      showStatus("success", "Family archive settings updated!");
+      router.refresh();
     } catch (err: unknown) {
       const errorObj = err as Error;
       showStatus("error", errorObj.message);
@@ -256,50 +286,7 @@ export function AdminClient({
     }
   };
 
-  // Delete Document
-  const handleDeleteDoc = async () => {
-    if (!docToDelete) return;
-    try {
-      const res = await fetch(`/api/documents/${docToDelete.id}`, { method: "DELETE" });
-      if (res.ok) {
-        setDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
-        setDocToDelete(null);
-        showStatus("success", "Document deleted from vault.");
-      }
-    } catch (err) {
-      showStatus("error", "Failed to delete document.");
-    }
-  };
-
-  // Google Drive State
-  const [gdriveEmail, setGdriveEmail] = useState(settings.gdrive_service_account_email || "");
-  const [gdrivePrivateKey, setGdrivePrivateKey] = useState(settings.gdrive_private_key || "");
-  const [gdriveFolderId, setGdriveFolderId] = useState(settings.gdrive_folder_id || "");
-  const [savingGDrive, setSavingGDrive] = useState(false);
-  const [testingGDrive, setTestingGDrive] = useState(false);
-  const [syncingGDrive, setSyncingGDrive] = useState(false);
-  const [gdriveTestResult, setGdriveTestResult] = useState<{
-    success: boolean;
-    message: string;
-    isConfigured?: boolean;
-    email?: string;
-    folderName?: string;
-    folderId?: string;
-    configDetails?: {
-      hasEmail: boolean;
-      hasKey: boolean;
-      hasFolderId: boolean;
-      hasOAuth: boolean;
-      email?: string;
-      folderId?: string;
-    };
-  } | null>(null);
-  const [syncResult, setSyncResult] = useState<{
-    syncedDocuments: number;
-    syncedPhotos: number;
-    errors?: string[];
-  } | null>(null);
-
+  // Google Drive Handlers
   const handleTestGDrive = async () => {
     setTestingGDrive(true);
     setGdriveTestResult(null);
@@ -308,9 +295,9 @@ export function AdminClient({
       const data = await res.json();
       setGdriveTestResult(data);
       if (data.success) {
-        showStatus("success", `Google Drive Connected: ${data.folderName || "Target Folder OK"}`);
+        showStatus("success", `Google Drive Connected: ${data.folderName || "Ready"}`);
       } else {
-        showStatus("error", data.message || "Google Drive connection test failed.");
+        showStatus("error", data.message || "Connection test failed.");
       }
     } catch {
       showStatus("error", "Unable to test Google Drive connection.");
@@ -333,8 +320,8 @@ export function AdminClient({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to save Google Drive settings.");
-      showStatus("success", "Google Drive settings saved! Testing connection now...");
+      if (!res.ok) throw new Error(data.error || "Failed to save credentials.");
+      showStatus("success", "Google Drive settings saved! Testing connection...");
       await handleTestGDrive();
     } catch (err: unknown) {
       const errorObj = err as Error;
@@ -346,13 +333,11 @@ export function AdminClient({
 
   const handleSyncGDrive = async () => {
     setSyncingGDrive(true);
-    setSyncResult(null);
     try {
       const res = await fetch("/api/admin/gdrive/sync", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to sync files.");
-      setSyncResult(data);
-      showStatus("success", `Migrated ${data.syncedDocuments} document(s) and ${data.syncedPhotos} photo(s) to Google Drive!`);
+      showStatus("success", `Migrated ${data.syncedDocuments} document(s) to Google Drive!`);
       router.refresh();
     } catch (err: unknown) {
       const errorObj = err as Error;
@@ -362,21 +347,12 @@ export function AdminClient({
     }
   };
 
-  const [importingGDrive, setImportingGDrive] = useState(false);
-  const [importResult, setImportResult] = useState<{
-    totalFilesInDrive: number;
-    importedCount: number;
-    alreadyExistingCount: number;
-  } | null>(null);
-
   const handleImportGDrive = async () => {
     setImportingGDrive(true);
-    setImportResult(null);
     try {
       const res = await fetch("/api/admin/gdrive/import", { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to import files from Google Drive.");
-      setImportResult(data);
       showStatus("success", `Imported ${data.importedCount} document(s) from Google Drive!`);
       router.refresh();
     } catch (err: unknown) {
@@ -387,20 +363,51 @@ export function AdminClient({
     }
   };
 
-  const navItems = [
-    { id: "overview", label: "Overview", icon: ShieldCheck },
-    { id: "members", label: "Members", icon: Users },
-    { id: "relationships", label: "Relationships", icon: GitFork },
-    { id: "documents", label: "Vault Documents", icon: FileText },
-    { id: "users", label: "User Accounts", icon: UserPlus },
-    { id: "audit", label: "Audit Logs", icon: History },
-    { id: "settings", label: "Family Settings", icon: Settings },
-    { id: "gdrive", label: "Google Drive (Free)", icon: HardDrive },
-  ] as const;
+  // Delete Document
+  const handleDeleteDoc = async () => {
+    if (!docToDelete) return;
+    try {
+      const res = await fetch(`/api/documents/${docToDelete.id}`, { method: "DELETE" });
+      if (res.ok) {
+        setDocuments((prev) => prev.filter((d) => d.id !== docToDelete.id));
+        setDocToDelete(null);
+        showStatus("success", "Document removed.");
+      }
+    } catch (err) {
+      console.error("Delete doc error:", err);
+    }
+  };
+
+  // Human-Readable Activity Log Formatter
+  const formatActivity = (log: AuditLog) => {
+    const actor = log.user_name || "Family Member";
+    const target = log.target_name || "a file";
+    const time = new Date(log.timestamp).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    let description = "";
+    if (log.action.includes("UPLOAD") || log.action.includes("CREATE")) {
+      description = `${actor} added "${target}"`;
+    } else if (log.action.includes("DOWNLOAD") || log.action.includes("VIEW")) {
+      description = `${actor} viewed "${target}"`;
+    } else if (log.action.includes("DELETE") || log.action.includes("REMOVE")) {
+      description = `${actor} removed "${target}"`;
+    } else if (log.action.includes("UPDATE")) {
+      description = `${actor} updated "${target}"`;
+    } else {
+      description = `${actor} checked ${target}`;
+    }
+
+    return { description, time };
+  };
 
   return (
     <div className="space-y-6">
-      {/* Status banner */}
+      {/* Top Banner Message */}
       {statusMessage && (
         <div
           className={`p-4 rounded-2xl border text-sm font-medium flex items-center gap-2.5 animate-in fade-in ${
@@ -418,320 +425,429 @@ export function AdminClient({
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 bg-white p-2 rounded-2xl border border-stone-200 shadow-xs">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
-                isActive
-                  ? "bg-amber-800 text-white shadow-xs"
-                  : "text-stone-600 hover:bg-stone-100"
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* OVERVIEW TAB */}
-      {activeTab === "overview" && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Total Members
-              </div>
-              <div className="text-3xl font-serif font-bold text-stone-900 mt-2">
-                {members.length}
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Vault Documents
-              </div>
-              <div className="text-3xl font-serif font-bold text-stone-900 mt-2">
-                {documents.length}
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                User Accounts
-              </div>
-              <div className="text-3xl font-serif font-bold text-stone-900 mt-2">
-                {users.length}
-              </div>
-            </div>
-            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs">
-              <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Audit Events
-              </div>
-              <div className="text-3xl font-serif font-bold text-stone-900 mt-2">
-                {auditLogs.length}
-              </div>
-            </div>
-          </div>
-
-          {/* Backup Export Card */}
-          <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="font-serif font-bold text-base text-stone-900">
-                Complete Archive Backup
-              </h3>
-              <p className="text-xs text-stone-500 mt-1 max-w-xl leading-relaxed">
-                Export all structured family members, kinship linkages, marriages, vault metadata, and albums into a standard portable JSON file.
-              </p>
-            </div>
-            <a
-              href="/api/admin/export"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors whitespace-nowrap"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download JSON Backup</span>
-            </a>
-          </div>
+      {/* Task Navigation Breadcrumb */}
+      {activeTask !== "tasks" && (
+        <div className="flex items-center justify-between bg-white p-3 px-4 rounded-2xl border border-stone-200 shadow-2xs">
+          <button
+            onClick={() => setActiveTask("tasks")}
+            className="flex items-center gap-2 text-xs sm:text-sm font-semibold text-stone-700 hover:text-stone-950 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>← Back to Admin Tasks</span>
+          </button>
+          <span className="text-xs font-bold uppercase tracking-wider text-amber-950 bg-amber-100/70 px-2.5 py-1 rounded-lg">
+            {activeTask === "add_member" && "+ Add Family Member"}
+            {activeTask === "add_doc" && "📄 Add Document"}
+            {activeTask === "relationships" && "🌳 Family Connections"}
+            {activeTask === "documents" && "📁 Documents"}
+            {activeTask === "access" && "👥 Family Access"}
+            {activeTask === "activity" && "📋 Family Activity"}
+            {activeTask === "settings" && "⚙️ Settings & Google Drive"}
+          </span>
         </div>
       )}
 
-      {/* MEMBERS TAB */}
-      {activeTab === "members" && (
-        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-6">
+      {/* 1. TASK-ORIENTED ADMIN HOME ("What would you like to do?") */}
+      {activeTask === "tasks" && (
+        <div className="space-y-8 animate-in fade-in">
           <div>
-            <h3 className="text-lg font-serif font-bold text-stone-900">Add Family Member</h3>
-            <p className="text-xs text-stone-500 mt-1">
-              Add a new relative to the family tree with parent and spouse bindings.
+            <h2 className="font-serif text-xl sm:text-2xl font-bold text-stone-900">
+              What would you like to do?
+            </h2>
+            <p className="text-xs sm:text-sm text-stone-500 mt-1">
+              Select an action to update family records, add documents, or manage access.
             </p>
           </div>
 
-          <form onSubmit={handleAddMember} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  First Name *
-                </label>
-                <input
-                  type="text"
-                  value={newMember.first_name}
-                  onChange={(e) => setNewMember({ ...newMember, first_name: e.target.value })}
-                  placeholder="e.g. Zaid"
-                  required
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                />
+          {/* Primary Task Buttons (Fitts's Law: 48px+ Touch) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            <button
+              onClick={() => {
+                setMemberStep(1);
+                setActiveTask("add_member");
+              }}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">👤</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  Start →
+                </span>
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Nickname (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={newMember.nickname}
-                  onChange={(e) => setNewMember({ ...newMember, nickname: e.target.value })}
-                  placeholder="e.g. Chhotu"
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                />
+                <div className="font-bold text-base text-stone-900">+ Add Family Member</div>
+                <div className="text-xs text-stone-500 mt-0.5">Add a new relative, parent, or child</div>
               </div>
+            </button>
 
+            <button
+              onClick={() => setActiveTask("add_doc")}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">📄</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  Upload →
+                </span>
+              </div>
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Gender
-                </label>
-                <select
-                  value={newMember.gender}
-                  onChange={(e) =>
-                    setNewMember({ ...newMember, gender: e.target.value as "male" | "female" })
-                  }
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                </select>
+                <div className="font-bold text-base text-stone-900">Add Document</div>
+                <div className="text-xs text-stone-500 mt-0.5">Upload Aadhaar, PAN, Property, Certificate</div>
               </div>
-            </div>
+            </button>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              onClick={() => setActiveTask("relationships")}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">🌳</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  Edit →
+                </span>
+              </div>
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Generation
-                </label>
-                <select
-                  value={newMember.generation}
-                  onChange={(e) =>
-                    setNewMember({ ...newMember, generation: parseInt(e.target.value, 10) })
-                  }
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                >
-                  <option value="1">Gen 1 (Grandparents)</option>
-                  <option value="2">Gen 2 (Brothers & Spouses)</option>
-                  <option value="3">Gen 3 (Cousins)</option>
-                  <option value="4">Gen 4 (Children)</option>
-                  <option value="5">Gen 5</option>
-                </select>
+                <div className="font-bold text-base text-stone-900">Family Connections</div>
+                <div className="text-xs text-stone-500 mt-0.5">Link parents, spouses, and children</div>
               </div>
+            </button>
 
+            <button
+              onClick={() => setActiveTask("documents")}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">📁</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  View ({documents.length}) →
+                </span>
+              </div>
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Family Role (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={newMember.family_role}
-                  onChange={(e) => setNewMember({ ...newMember, family_role: e.target.value })}
-                  placeholder="e.g. Eldest Grandson"
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                />
+                <div className="font-bold text-base text-stone-900">All Documents</div>
+                <div className="text-xs text-stone-500 mt-0.5">Review, preview, or remove stored papers</div>
               </div>
+            </button>
 
+            <button
+              onClick={() => setActiveTask("access")}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">👥</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  Manage →
+                </span>
+              </div>
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Display Order
-                </label>
-                <input
-                  type="number"
-                  value={newMember.display_order}
-                  onChange={(e) =>
-                    setNewMember({ ...newMember, display_order: parseInt(e.target.value, 10) || 1 })
-                  }
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                />
+                <div className="font-bold text-base text-stone-900">Family Access</div>
+                <div className="text-xs text-stone-500 mt-0.5">Manage accounts and editor permissions</div>
               </div>
-            </div>
+            </button>
 
-            {/* Parents & Spouse */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <button
+              onClick={() => setActiveTask("settings")}
+              className="p-5 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200/90 text-left transition-all shadow-2xs hover:border-amber-400 min-h-[96px] flex flex-col justify-between cursor-pointer group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-2xl">⚙️</span>
+                <span className="text-xs font-bold text-amber-900 group-hover:translate-x-0.5 transition-transform">
+                  Configure →
+                </span>
+              </div>
               <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Father
-                </label>
-                <select
-                  value={newMember.father_id}
-                  onChange={(e) => setNewMember({ ...newMember, father_id: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                >
-                  <option value="">None / Unknown</option>
-                  {members.filter(m => m.gender === "male").map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
-                    </option>
-                  ))}
-                </select>
+                <div className="font-bold text-base text-stone-900">Settings & Google Drive</div>
+                <div className="text-xs text-stone-500 mt-0.5">Archive name, Drive test, sync & import</div>
               </div>
+            </button>
+          </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Mother
-                </label>
-                <select
-                  value={newMember.mother_id}
-                  onChange={(e) => setNewMember({ ...newMember, mother_id: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                >
-                  <option value="">None / Unknown</option>
-                  {members.filter(m => m.gender === "female").map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.first_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Spouse
-                </label>
-                <select
-                  value={newMember.spouse_id}
-                  onChange={(e) => setNewMember({ ...newMember, spouse_id: e.target.value })}
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                >
-                  <option value="">None / Unmarried</option>
-                  {members.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.first_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Bio */}
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                Biography / Notes
-              </label>
-              <textarea
-                value={newMember.bio}
-                onChange={(e) => setNewMember({ ...newMember, bio: e.target.value })}
-                rows={2}
-                placeholder="Memories, profession, or notes..."
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm resize-none"
-              />
-            </div>
-
-            {/* Flags */}
-            <div className="flex items-center gap-6 pt-1">
-              <label className="flex items-center gap-2 text-xs font-medium text-stone-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newMember.is_deceased}
-                  onChange={(e) => setNewMember({ ...newMember, is_deceased: e.target.checked })}
-                  className="rounded text-amber-800"
-                />
-                <span>Deceased (🕊️ Respectful styling)</span>
-              </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-stone-700 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newMember.is_family_lead}
-                  onChange={(e) => setNewMember({ ...newMember, is_family_lead: e.target.checked })}
-                  className="rounded text-amber-800"
-                />
-                <span>Designate as Family Lead (👑 Badge)</span>
-              </label>
-            </div>
-
-            <div className="pt-3">
+          {/* Recent Family Activity (Human Language, No DB Jargon) */}
+          <section className="space-y-3 pt-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif text-lg font-bold text-stone-900">
+                Recent Family Activity
+              </h3>
               <button
-                type="submit"
-                disabled={savingMember}
-                className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                onClick={() => setActiveTask("activity")}
+                className="text-xs font-semibold text-amber-900 hover:underline cursor-pointer"
               >
-                {savingMember ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                <span>Save New Member</span>
+                View all ({auditLogs.length}) →
               </button>
             </div>
+
+            <div className="bg-white rounded-2xl border border-stone-200 divide-y divide-stone-100 shadow-2xs overflow-hidden">
+              {auditLogs.slice(0, 5).map((log) => {
+                const { description, time } = formatActivity(log);
+                return (
+                  <div key={log.id} className="p-3.5 px-4 flex items-center justify-between text-xs">
+                    <span className="font-medium text-stone-800">{description}</span>
+                    <span className="text-stone-400 flex-shrink-0">{time}</span>
+                  </div>
+                );
+              })}
+              {auditLogs.length === 0 && (
+                <div className="p-6 text-center text-xs text-stone-500">No recent activity yet.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* 2. GUIDED ADD FAMILY MEMBER (Step-by-Step, not a giant form) */}
+      {activeTask === "add_member" && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs max-w-xl mx-auto space-y-6 animate-in fade-in">
+          <div className="border-b border-stone-100 pb-4">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-900">
+              Step {memberStep} of 4
+            </span>
+            <h3 className="font-serif text-xl font-bold text-stone-900 mt-1">
+              {memberStep === 1 && "Name & Role"}
+              {memberStep === 2 && "Who are the parents?"}
+              {memberStep === 3 && "Marriage & Spouse"}
+              {memberStep === 4 && "Review & Save"}
+            </h3>
+          </div>
+
+          <form onSubmit={handleAddMember} className="space-y-4">
+            {/* Step 1: Basic Identity */}
+            {memberStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                    First Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={newMember.first_name}
+                    onChange={(e) => setNewMember({ ...newMember, first_name: e.target.value })}
+                    placeholder="e.g. Zaid"
+                    required
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                    Nickname (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={newMember.nickname}
+                    onChange={(e) => setNewMember({ ...newMember, nickname: e.target.value })}
+                    placeholder="e.g. Chhotu"
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                      Gender
+                    </label>
+                    <select
+                      value={newMember.gender}
+                      onChange={(e) =>
+                        setNewMember({ ...newMember, gender: e.target.value as "male" | "female" })
+                      }
+                      className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                      Generation
+                    </label>
+                    <select
+                      value={newMember.generation}
+                      onChange={(e) =>
+                        setNewMember({ ...newMember, generation: parseInt(e.target.value, 10) })
+                      }
+                      className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                    >
+                      <option value="1">Gen 1 (Grandparents)</option>
+                      <option value="2">Gen 2 (Brothers & Spouses)</option>
+                      <option value="3">Gen 3 (Children/Cousins)</option>
+                      <option value="4">Gen 4 (Grandchildren)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newMember.first_name.trim()) {
+                        showStatus("error", "First name is required.");
+                        return;
+                      }
+                      setMemberStep(2);
+                    }}
+                    className="min-h-[44px] px-5 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>Next: Parents →</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Parents */}
+            {memberStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                    Father
+                  </label>
+                  <select
+                    value={newMember.father_id}
+                    onChange={(e) => setNewMember({ ...newMember, father_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                  >
+                    <option value="">Unknown / None</option>
+                    {members
+                      .filter((m) => m.gender === "male")
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                    Mother
+                  </label>
+                  <select
+                    value={newMember.mother_id}
+                    onChange={(e) => setNewMember({ ...newMember, mother_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                  >
+                    <option value="">Unknown / None</option>
+                    {members
+                      .filter((m) => m.gender === "female")
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <div className="pt-2 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setMemberStep(1)}
+                    className="min-h-[44px] px-4 py-2 border border-stone-300 text-stone-700 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemberStep(3)}
+                    className="min-h-[44px] px-5 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Next: Spouse →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3: Spouse */}
+            {memberStep === 3 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                    Spouse
+                  </label>
+                  <select
+                    value={newMember.spouse_id}
+                    onChange={(e) => setNewMember({ ...newMember, spouse_id: e.target.value })}
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                  >
+                    <option value="">Unmarried / None</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-2 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setMemberStep(2)}
+                    className="min-h-[44px] px-4 py-2 border border-stone-300 text-stone-700 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemberStep(4)}
+                    className="min-h-[44px] px-5 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    Next: Review →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 4: Review & Save */}
+            {memberStep === 4 && (
+              <div className="space-y-4">
+                <div className="p-4 bg-stone-50 rounded-2xl space-y-2 text-xs text-stone-700">
+                  <div><strong>Name:</strong> {newMember.first_name} {newMember.nickname && `(${newMember.nickname})`}</div>
+                  <div><strong>Generation:</strong> Gen {newMember.generation}</div>
+                  <div><strong>Father:</strong> {members.find((m) => m.id === newMember.father_id)?.first_name || "None"}</div>
+                  <div><strong>Mother:</strong> {members.find((m) => m.id === newMember.mother_id)?.first_name || "None"}</div>
+                  <div><strong>Spouse:</strong> {members.find((m) => m.id === newMember.spouse_id)?.first_name || "Unmarried"}</div>
+                </div>
+
+                <div className="pt-2 flex justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setMemberStep(3)}
+                    className="min-h-[44px] px-4 py-2 border border-stone-300 text-stone-700 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingMember}
+                    className="min-h-[44px] px-6 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                  >
+                    {savingMember ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    <span>Save Relative</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         </div>
       )}
 
-      {/* RELATIONSHIPS TAB */}
-      {activeTab === "relationships" && (
-        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-6">
+      {/* 3. GUIDED ADD DOCUMENT (Whose document? -> What document? -> Upload -> Save) */}
+      {activeTask === "add_doc" && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs max-w-xl mx-auto space-y-6 animate-in fade-in">
           <div>
-            <h3 className="text-lg font-serif font-bold text-stone-900">
-              Kinship & Relationship Editor
-            </h3>
-            <p className="text-xs text-stone-500 mt-1">
-              Update parents and spouses with automated cycle loop detection.
-            </p>
+            <h3 className="font-serif text-xl font-bold text-stone-900">Add Family Document</h3>
+            <p className="text-xs text-stone-500 mt-1">Upload an Aadhaar, PAN, Property paper, or Certificate.</p>
           </div>
 
-          <form onSubmit={handleUpdateRelationships} className="space-y-4 max-w-xl">
+          <form onSubmit={handleAddDocument} className="space-y-4">
+            {/* Question 1: Whose document is this? */}
             <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                Select Person
+              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-2">
+                1. Whose document is this?
               </label>
               <select
-                value={relPersonId}
-                onChange={(e) => setRelPersonId(e.target.value)}
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
+                value={docPersonId}
+                onChange={(e) => setDocPersonId(e.target.value)}
+                className="w-full px-3.5 py-3 border border-stone-300 rounded-xl text-sm bg-white"
               >
                 {members.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -741,7 +857,116 @@ export function AdminClient({
               </select>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Question 2: What document is it? */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                  2. Document Name
+                </label>
+                <select
+                  value={docType}
+                  onChange={(e) => setDocType(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-stone-300 rounded-xl text-xs bg-white"
+                >
+                  <option value="Aadhaar Card">Aadhaar Card</option>
+                  <option value="PAN Card">PAN Card</option>
+                  <option value="Passport">Passport</option>
+                  <option value="Property Paper">Property Paper / 7-12</option>
+                  <option value="Marriage Certificate">Marriage Certificate</option>
+                  <option value="Medical Record">Medical Record</option>
+                  <option value="School Certificate">School Certificate</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                  Category
+                </label>
+                <select
+                  value={docCategory}
+                  onChange={(e) => setDocCategory(e.target.value)}
+                  className="w-full px-3 py-2.5 border border-stone-300 rounded-xl text-xs bg-white"
+                >
+                  <option value="Identity">Identity</option>
+                  <option value="Property">Property</option>
+                  <option value="Marriage & Family">Marriage & Family</option>
+                  <option value="Medical">Medical</option>
+                  <option value="Education">Education</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Question 3: Choose or Photograph File */}
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                3. Choose or photograph document
+              </label>
+              <input
+                type="file"
+                id="guided-doc-file"
+                multiple
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  if (e.target.files) {
+                    setDocFiles(Array.from(e.target.files));
+                  }
+                }}
+                className="hidden"
+              />
+              <label
+                htmlFor="guided-doc-file"
+                className="w-full min-h-[50px] p-4 bg-stone-50 hover:bg-stone-100 border-2 border-dashed border-stone-300 hover:border-amber-500 rounded-2xl flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                <Camera className="w-5 h-5 text-amber-900" />
+                <span className="text-xs font-semibold text-stone-800">
+                  {docFiles.length > 0
+                    ? `${docFiles.length} document(s) chosen`
+                    : "Tap to take photo or choose file"}
+                </span>
+              </label>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={savingDoc || docFiles.length === 0}
+                className="w-full min-h-[48px] py-3 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+              >
+                {savingDoc ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                <span>Save to Family Cupboard</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 4. FAMILY CONNECTIONS & KINSHIP */}
+      {activeTask === "relationships" && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs max-w-xl mx-auto space-y-6 animate-in fade-in">
+          <div>
+            <h3 className="font-serif text-xl font-bold text-stone-900">Family Connections</h3>
+            <p className="text-xs text-stone-500 mt-1">Link relatives as parents, spouses, and children.</p>
+          </div>
+
+          <form onSubmit={handleUpdateRelationships} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
+                Select Person
+              </label>
+              <select
+                value={relPersonId}
+                onChange={(e) => setRelPersonId(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm bg-white"
+              >
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
                   Father
@@ -749,7 +974,7 @@ export function AdminClient({
                 <select
                   value={relFatherId}
                   onChange={(e) => setRelFatherId(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
+                  className="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-white"
                 >
                   <option value="">None / Remove</option>
                   {members
@@ -769,7 +994,7 @@ export function AdminClient({
                 <select
                   value={relMotherId}
                   onChange={(e) => setRelMotherId(e.target.value)}
-                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
+                  className="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-white"
                 >
                   <option value="">None / Remove</option>
                   {members
@@ -790,7 +1015,7 @@ export function AdminClient({
               <select
                 value={relSpouseId}
                 onChange={(e) => setRelSpouseId(e.target.value)}
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
+                className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm bg-white"
               >
                 <option value="">None / Unmarried</option>
                 {members
@@ -807,28 +1032,31 @@ export function AdminClient({
               <button
                 type="submit"
                 disabled={savingRel}
-                className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                className="w-full min-h-[48px] py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
               >
                 {savingRel ? <Loader2 className="w-4 h-4 animate-spin" /> : <GitFork className="w-4 h-4" />}
-                <span>Update Kinship Linkages</span>
+                <span>Update Family Connections</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* DOCUMENTS TAB */}
-      {activeTab === "documents" && (
-        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
+      {/* 5. ALL DOCUMENTS (Simple Table with Inline Preview & Download) */}
+      {activeTask === "documents" && (
+        <div className="bg-white p-6 rounded-3xl border border-stone-200/90 shadow-2xs space-y-4 animate-in fade-in">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-serif font-bold text-stone-900">
-                Vault Documents Management
-              </h3>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Total {documents.length} records in private storage.
-              </p>
+              <h3 className="font-serif text-lg font-bold text-stone-900">Family Documents</h3>
+              <p className="text-xs text-stone-500 mt-0.5">Total {documents.length} records stored in cupboard.</p>
             </div>
+            <button
+              onClick={() => setActiveTask("add_doc")}
+              className="min-h-[40px] px-3 py-1.5 bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Add Paper</span>
+            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -839,7 +1067,6 @@ export function AdminClient({
                   <th className="py-3 px-4">Relative</th>
                   <th className="py-3 px-4">Category</th>
                   <th className="py-3 px-4">Size</th>
-                  <th className="py-3 px-4">Uploaded By</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -848,68 +1075,50 @@ export function AdminClient({
                   <tr key={doc.id} className="hover:bg-stone-50/50 transition-colors">
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-3">
-                        {/* Miniature Document Thumbnail */}
                         <div
                           onClick={() => setPreviewDoc(doc)}
                           className="w-10 h-10 rounded-lg overflow-hidden border border-stone-200 cursor-pointer flex items-center justify-center bg-stone-100 flex-shrink-0 hover:ring-2 hover:ring-amber-500 shadow-2xs"
-                          title="Click to preview document"
                         >
                           {doc.file_type?.startsWith("image/") ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={`/api/documents/${doc.id}/preview`}
-                              alt={doc.name}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : doc.file_type?.includes("pdf") ? (
-                            <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1 py-0.5 rounded">PDF</span>
+                            <img src={`/api/documents/${doc.id}/preview`} alt={doc.name} className="w-full h-full object-cover" />
                           ) : (
-                            <FileText className="w-4 h-4 text-stone-500" />
+                            <FileText className="w-4 h-4 text-stone-600" />
                           )}
                         </div>
-
-                        <div className="truncate max-w-xs">
-                          <span
-                            onClick={() => setPreviewDoc(doc)}
-                            className="font-semibold text-stone-900 hover:text-amber-800 cursor-pointer block truncate text-xs"
-                          >
-                            {doc.name}
-                          </span>
-                          {doc.google_drive_file_id && (
-                            <span className="text-[10px] text-emerald-700 font-medium flex items-center gap-1 mt-0.5">
-                              <Cloud className="w-3 h-3 text-emerald-600" /> Drive Synced
-                            </span>
-                          )}
-                        </div>
+                        <span
+                          onClick={() => setPreviewDoc(doc)}
+                          className="font-semibold text-stone-900 hover:text-amber-900 cursor-pointer block truncate max-w-xs"
+                        >
+                          {doc.name}
+                        </span>
                       </div>
                     </td>
                     <td className="py-3 px-4 text-stone-700 font-medium">{doc.first_name}</td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded-md font-medium">
+                      <span className="px-2 py-0.5 bg-amber-100/70 text-amber-950 rounded-md font-medium">
                         {doc.category}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-stone-500">{(doc.file_size / 1024).toFixed(0)} KB</td>
-                    <td className="py-3 px-4 text-stone-500">{doc.uploaded_by}</td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => setPreviewDoc(doc)}
-                          className="p-1.5 text-stone-500 hover:text-amber-800 rounded-lg hover:bg-amber-50 transition-colors cursor-pointer"
-                          title="Preview Document"
+                          className="p-1.5 text-stone-600 hover:text-amber-900 rounded-lg hover:bg-amber-50 transition-colors cursor-pointer"
+                          title="Open preview"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
                         <a
                           href={`/api/documents/${doc.id}/download`}
-                          className="p-1.5 text-stone-500 hover:text-stone-800 rounded-lg hover:bg-stone-100 transition-colors"
+                          className="p-1.5 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-100 transition-colors"
                           title="Download"
                         >
                           <Download className="w-4 h-4" />
                         </a>
                         <button
                           onClick={() => setDocToDelete(doc)}
-                          className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
+                          className="p-1.5 text-stone-400 hover:text-rose-700 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -924,530 +1133,310 @@ export function AdminClient({
         </div>
       )}
 
-      {/* USERS TAB */}
-      {activeTab === "users" && (
-        <div className="space-y-6">
-          {/* Create User Form */}
-          <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-            <h3 className="text-lg font-serif font-bold text-stone-900">Create User Account</h3>
-            <form onSubmit={handleCreateUser} className="space-y-4 max-w-xl">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Username *
-                  </label>
-                  <input
-                    type="text"
-                    value={newUser.username}
-                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
-                    required
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                  />
-                </div>
+      {/* 6. FAMILY ACCESS (User Accounts) */}
+      {activeTask === "access" && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs max-w-xl mx-auto space-y-4">
+            <h3 className="font-serif text-xl font-bold text-stone-900">Grant Family Access</h3>
+            <p className="text-xs text-stone-500">Create access credentials for relatives who can manage records.</p>
 
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Password *
-                  </label>
-                  <input
-                    type="password"
-                    value={newUser.password}
-                    onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                    required
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                  />
-                </div>
+            <form onSubmit={handleCreateUser} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  value={newUser.username}
+                  onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                  placeholder="e.g. mustafa"
+                  required
+                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Role *
-                  </label>
-                  <select
-                    value={newUser.role}
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                  >
-                    <option value="SUPER_ADMIN">SUPER_ADMIN (Full control)</option>
-                    <option value="FAMILY_ADMIN">FAMILY_ADMIN (Manage members & docs)</option>
-                    <option value="FAMILY_MEMBER">FAMILY_MEMBER (Standard family access)</option>
-                    <option value="VIEWER">VIEWER (Read-only)</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  placeholder="Enter strong password"
+                  required
+                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                    Link to Family Member
-                  </label>
-                  <select
-                    value={newUser.family_member_id}
-                    onChange={(e) => setNewUser({ ...newUser, family_member_id: e.target.value })}
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-                  >
-                    <option value="">None / External</option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Connect to Family Member
+                </label>
+                <select
+                  value={newUser.family_member_id}
+                  onChange={(e) => setNewUser({ ...newUser, family_member_id: e.target.value })}
+                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm bg-white"
+                >
+                  <option value="">None / Administrator</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
                   disabled={savingUser}
-                  className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
+                  className="w-full min-h-[48px] py-2.5 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
                 >
                   {savingUser ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                  <span>Create Account</span>
+                  <span>Create Family Access Account</span>
                 </button>
               </div>
             </form>
           </div>
 
-          {/* Users List */}
-          <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-            <h3 className="text-base font-serif font-bold text-stone-900">Existing Accounts</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-stone-50 text-stone-500 uppercase tracking-wider border-b border-stone-200">
-                  <tr>
-                    <th className="py-3 px-4">Username</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Linked Member</th>
-                    <th className="py-3 px-4">Created</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100">
-                  {users.map((u) => (
-                    <tr key={u.id}>
-                      <td className="py-3 px-4 font-semibold text-stone-900">{u.username}</td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 bg-stone-100 text-stone-800 rounded-md font-medium">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-stone-600">{u.first_name || "—"}</td>
-                      <td className="py-3 px-4 text-stone-500">
-                        {new Date(u.created_at).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AUDIT LOG TAB */}
-      {activeTab === "audit" && (
-        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-          <div>
-            <h3 className="text-lg font-serif font-bold text-stone-900">Security Audit Logs</h3>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Chronological log of logins, document downloads, and changes.
-            </p>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-50 text-stone-500 uppercase tracking-wider border-b border-stone-200">
-                <tr>
-                  <th className="py-3 px-4">Timestamp</th>
-                  <th className="py-3 px-4">User</th>
-                  <th className="py-3 px-4">Action</th>
-                  <th className="py-3 px-4">Target</th>
-                  <th className="py-3 px-4">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-stone-50/50">
-                    <td className="py-3 px-4 text-stone-400 whitespace-nowrap">
-                      {new Date(log.timestamp).toLocaleString()}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-stone-900">{log.user_name}</td>
-                    <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 bg-amber-100 text-amber-900 rounded font-medium">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-stone-700 font-medium">{log.target_name}</td>
-                    <td className="py-3 px-4 text-stone-500 max-w-xs truncate">{log.details}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* SETTINGS TAB */}
-      {activeTab === "settings" && (
-        <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-6">
-          <div>
-            <h3 className="text-lg font-serif font-bold text-stone-900">Family Archive Settings</h3>
-            <p className="text-xs text-stone-500 mt-1">Configure family archive identity and rules.</p>
-          </div>
-
-          <form onSubmit={handleSaveSettings} className="space-y-4 max-w-xl">
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                Family Archive Title
-              </label>
-              <input
-                type="text"
-                value={familyName}
-                onChange={(e) => setFamilyName(e.target.value)}
-                required
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                Archive Description / Subtitle
-              </label>
-              <input
-                type="text"
-                value={familyDesc}
-                onChange={(e) => setFamilyDesc(e.target.value)}
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1.5">
-                Designated Family Lead
-              </label>
-              <select
-                value={familyLeadId}
-                onChange={(e) => setFamilyLeadId(e.target.value)}
-                className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-sm"
-              >
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={savingSettings}
-                className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors flex items-center gap-2 disabled:opacity-50"
-              >
-                {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Settings className="w-4 h-4" />}
-                <span>Save Settings</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* GOOGLE DRIVE TAB */}
-      {activeTab === "gdrive" && (
-        <div className="space-y-6">
-          {/* Header Card */}
-          <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-serif font-bold text-stone-900">
-                    Google Drive Integration
-                  </h3>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    100% Free
-                  </span>
+          <div className="bg-white p-6 rounded-3xl border border-stone-200/90 shadow-2xs max-w-xl mx-auto space-y-3">
+            <h4 className="font-bold text-sm text-stone-900">Active Accounts ({users.length})</h4>
+            <div className="divide-y divide-stone-100 text-xs">
+              {users.map((u) => (
+                <div key={u.id} className="py-2.5 flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-stone-900">{u.username}</span>
+                    <span className="text-stone-400 ml-2">({u.role})</span>
+                  </div>
+                  <span className="text-stone-500">{u.first_name || "Admin"}</span>
                 </div>
-                <p className="text-xs text-stone-500 mt-1 max-w-2xl leading-relaxed">
-                  Connect your family archive to Google Drive. Files uploaded through the website are saved directly into your Google Drive, and family members can <strong>directly view and download them from this website without ever visiting Google Drive</strong>.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleTestGDrive}
-                  disabled={testingGDrive}
-                  className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  {testingGDrive ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  )}
-                  <span>Test Connection</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleImportGDrive}
-                  disabled={importingGDrive}
-                  className="px-4 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  {importingGDrive ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5" />
-                  )}
-                  <span>Import from Drive</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSyncGDrive}
-                  disabled={syncingGDrive}
-                  className="px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                  {syncingGDrive ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <UploadCloud className="w-3.5 h-3.5" />
-                  )}
-                  <span>Migrate Local Files</span>
-                </button>
-              </div>
+              ))}
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* Live Status Result */}
+      {/* 7. ALL ACTIVITY */}
+      {activeTask === "activity" && (
+        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs max-w-2xl mx-auto space-y-4 animate-in fade-in">
+          <div>
+            <h3 className="font-serif text-xl font-bold text-stone-900">Family Activity</h3>
+            <p className="text-xs text-stone-500">Record of documents added, viewed, or updated.</p>
+          </div>
+
+          <div className="divide-y divide-stone-100 text-xs">
+            {auditLogs.map((log) => {
+              const { description, time } = formatActivity(log);
+              return (
+                <div key={log.id} className="py-3 flex items-center justify-between gap-4">
+                  <span className="text-stone-800 font-medium">{description}</span>
+                  <span className="text-stone-400 whitespace-nowrap">{time}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 8. SETTINGS & GOOGLE DRIVE */}
+      {activeTask === "settings" && (
+        <div className="space-y-6 max-w-xl mx-auto animate-in fade-in">
+          {/* General Archive Settings */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs space-y-4">
+            <h3 className="font-serif text-xl font-bold text-stone-900">Archive Settings</h3>
+
+            <form onSubmit={handleSaveSettings} className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Family Name
+                </label>
+                <input
+                  type="text"
+                  value={familyName}
+                  onChange={(e) => setFamilyName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Family Lead
+                </label>
+                <select
+                  value={familyLeadId}
+                  onChange={(e) => setFamilyLeadId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-xl text-sm bg-white"
+                >
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={savingSettings}
+                  className="min-h-[44px] px-5 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {savingSettings ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Save Archive Settings</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Google Drive 100% Free Cloud Storage */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-stone-200/90 shadow-2xs space-y-4">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-5 h-5 text-amber-900" />
+              <h3 className="font-serif text-xl font-bold text-stone-900">Google Drive Storage</h3>
+            </div>
+            <p className="text-xs text-stone-500">
+              Files are streamed directly through the website with zero redirects to Google Drive.
+            </p>
+
             {gdriveTestResult && (
               <div
-                className={`mt-4 p-4 rounded-xl border text-xs font-medium flex items-start gap-3 ${
+                className={`p-3.5 rounded-2xl text-xs font-medium ${
                   gdriveTestResult.success
-                    ? "bg-emerald-50/80 border-emerald-200 text-emerald-900"
-                    : "bg-rose-50/80 border-rose-200 text-rose-900"
+                    ? "bg-emerald-50 text-emerald-900 border border-emerald-200"
+                    : "bg-rose-50 text-rose-900 border border-rose-200"
                 }`}
               >
-                {gdriveTestResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                )}
-                <div className="space-y-1">
-                  <div className="font-bold">{gdriveTestResult.message}</div>
-                  {gdriveTestResult.folderName && (
-                    <div>Target Folder: <strong>{gdriveTestResult.folderName}</strong> (ID: {gdriveTestResult.folderId})</div>
-                  )}
-                  {gdriveTestResult.email && (
-                    <div>Service Account: <strong>{gdriveTestResult.email}</strong></div>
-                  )}
-                </div>
+                {gdriveTestResult.success
+                  ? `Google Drive Connected: ${gdriveTestResult.folderName}`
+                  : `Connection Error: ${gdriveTestResult.message}`}
               </div>
             )}
 
-            {/* Sync Migration Result */}
-            {syncResult && (
-              <div className="mt-4 p-4 rounded-xl border bg-amber-50/80 border-amber-200 text-amber-900 text-xs flex items-start gap-3">
-                <CheckCircle2 className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold">Migration Complete!</div>
-                  <div className="mt-0.5">
-                    Successfully migrated <strong>{syncResult.syncedDocuments}</strong> vault document(s) and <strong>{syncResult.syncedPhotos}</strong> photo(s) to Google Drive.
-                  </div>
-                  {syncResult.errors && syncResult.errors.length > 0 && (
-                    <div className="mt-2 text-rose-700 font-mono text-[11px]">
-                      {syncResult.errors.join(", ")}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={handleTestGDrive}
+                disabled={testingGDrive}
+                className="min-h-[44px] px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer border border-stone-200"
+              >
+                {testingGDrive ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                <span>Test Connection</span>
+              </button>
 
-            {/* Import Result */}
-            {importResult && (
-              <div className="mt-4 p-4 rounded-xl border bg-emerald-50/80 border-emerald-200 text-emerald-900 text-xs flex items-start gap-3">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold">Google Drive Import Complete!</div>
-                  <div className="mt-0.5">
-                    Found <strong>{importResult.totalFilesInDrive}</strong> file(s) in Google Drive. Imported <strong>{importResult.importedCount}</strong> new document(s) into your archive ({importResult.alreadyExistingCount} already present).
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+              <button
+                type="button"
+                onClick={handleImportGDrive}
+                disabled={importingGDrive}
+                className="min-h-[44px] px-4 py-2 bg-amber-900 hover:bg-amber-950 text-white rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-xs"
+              >
+                {importingGDrive ? <Loader2 className="w-4 h-4 animate-spin" /> : <HardDrive className="w-4 h-4" />}
+                <span>Import from Drive</span>
+              </button>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Step-by-step Setup Guide */}
-            <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-              <div className="flex items-center gap-2">
-                <Cloud className="w-5 h-5 text-amber-800" />
-                <h4 className="text-sm font-serif font-bold text-stone-900">
-                  How to Set Up (100% Free &amp; No Credit Card)
-                </h4>
-              </div>
-
-              <ol className="space-y-3.5 text-xs text-stone-600 list-decimal list-inside leading-relaxed">
-                <li className="pl-1">
-                  <strong>Create Google Cloud Project:</strong> Go to{" "}
-                  <a
-                    href="https://console.cloud.google.com/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-amber-800 hover:underline font-semibold inline-flex items-center gap-0.5"
-                  >
-                    console.cloud.google.com <ExternalLink className="w-3 h-3 inline" />
-                  </a>{" "}
-                  and create a project. You do <strong>not</strong> need to add any billing or credit card.
-                </li>
-                <li className="pl-1">
-                  <strong>Enable Google Drive API:</strong> In the search bar, search for <em>&quot;Google Drive API&quot;</em> and click <strong>Enable</strong>.
-                </li>
-                <li className="pl-1">
-                  <strong>Create a Service Account:</strong> Go to <strong>IAM &amp; Admin &gt; Service Accounts</strong>, click <strong>Create Service Account</strong>, give it a name (e.g., <code>family-archive</code>) and click Done.
-                </li>
-                <li className="pl-1">
-                  <strong>Generate JSON Key:</strong> Click your new Service Account, navigate to the <strong>Keys</strong> tab, click <strong>Add Key &gt; Create new key &gt; JSON</strong>. Download the JSON key file.
-                </li>
-                <li className="pl-1">
-                  <strong>Create Folder in Google Drive:</strong> Open your Google Drive, create a folder (e.g. <em>&quot;Family Archive Vault&quot;</em>), click <strong>Share</strong>, and paste the service account email (ends with <code>@...iam.gserviceaccount.com</code>) with <strong>Editor</strong> permission.
-                </li>
-                <li className="pl-1">
-                  <strong>Paste Settings:</strong> Copy the Folder ID (the characters at the end of the folder URL) and credentials into the form on the right!
-                </li>
-              </ol>
+              <button
+                type="button"
+                onClick={handleSyncGDrive}
+                disabled={syncingGDrive}
+                className="min-h-[44px] px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer border border-stone-200"
+              >
+                {syncingGDrive ? <Loader2 className="w-4 h-4 animate-spin" /> : <Cloud className="w-4 h-4" />}
+                <span>Migrate Local Files</span>
+              </button>
             </div>
 
-            {/* Direct Configuration Form */}
-            <div className="bg-white p-6 rounded-2xl border border-stone-200 shadow-xs space-y-4">
-              <div className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-amber-800" />
-                <h4 className="text-sm font-serif font-bold text-stone-900">
-                  Google Drive Credentials
-                </h4>
+            {/* Credentials Form */}
+            <form onSubmit={handleSaveGDrive} className="space-y-3 pt-3 border-t border-stone-100">
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Service Account Email
+                </label>
+                <input
+                  type="text"
+                  value={gdriveEmail}
+                  onChange={(e) => setGdriveEmail(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-xs"
+                />
               </div>
 
-              <form onSubmit={handleSaveGDrive} className="space-y-3.5">
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
-                    Service Account Email
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="family-archive@your-project.iam.gserviceaccount.com"
-                    value={gdriveEmail}
-                    onChange={(e) => setGdriveEmail(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-xs font-mono"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
+                  Folder ID
+                </label>
+                <input
+                  type="text"
+                  value={gdriveFolderId}
+                  onChange={(e) => setGdriveFolderId(e.target.value)}
+                  className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-xs"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
-                    Google Drive Folder ID
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j..."
-                    value={gdriveFolderId}
-                    onChange={(e) => setGdriveFolderId(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-xs font-mono"
-                  />
-                  <p className="text-[11px] text-stone-400 mt-1">
-                    Found in your Google Drive folder URL: <code>drive.google.com/drive/folders/<strong>[FOLDER_ID]</strong></code>
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-stone-700 uppercase tracking-wider mb-1">
-                    Private Key (from downloaded JSON)
-                  </label>
-                  <textarea
-                    rows={4}
-                    placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-                    value={gdrivePrivateKey}
-                    onChange={(e) => setGdrivePrivateKey(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-stone-300 rounded-xl text-xs font-mono resize-y"
-                  />
-                  <p className="text-[11px] text-stone-400 mt-1">
-                    Tip: You can also place the downloaded JSON file as <code>service-account.json</code> in the project root folder.
-                  </p>
-                </div>
-
-                <div className="pt-2 flex items-center gap-3">
-                  <button
-                    type="submit"
-                    disabled={savingGDrive}
-                    className="px-5 py-2.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {savingGDrive ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4" />
-                    )}
-                    <span>Save &amp; Test Credentials</span>
-                  </button>
-                </div>
-              </form>
-            </div>
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={savingGDrive}
+                  className="min-h-[44px] px-5 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
+                >
+                  {savingGDrive ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  <span>Save Drive Credentials</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={Boolean(docToDelete)}
-        title="Delete this document?"
-        message={`Are you sure you want to permanently delete "${docToDelete?.name}"?`}
-        confirmText="Delete Document"
-        isDestructive={true}
-        onConfirm={handleDeleteDoc}
-        onCancel={() => setDocToDelete(null)}
-      />
-
-      {/* Document Quick Preview Modal for Admin Ease of Review & Approval */}
+      {/* Full-Screen Document Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 z-60 bg-black/85 backdrop-blur-sm flex flex-col p-3 sm:p-6 animate-in fade-in">
-          <div className="flex items-center justify-between p-3 bg-stone-900/90 text-white rounded-t-2xl">
-            <div className="flex items-center gap-2 truncate">
-              <FileText className="w-5 h-5 text-amber-400 flex-shrink-0" />
-              <h4 className="font-bold text-sm truncate">{previewDoc.name}</h4>
-              <span className="text-xs text-stone-400 hidden sm:inline">
-                ({previewDoc.category} • {(previewDoc.file_size / 1024).toFixed(0)} KB)
-              </span>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex flex-col p-2 sm:p-4 animate-in fade-in">
+          <div className="flex items-center justify-between p-3 text-white max-w-5xl mx-auto w-full">
+            <h4 className="font-bold text-sm sm:text-base truncate">{previewDoc.name}</h4>
+            <div className="flex items-center gap-3 flex-shrink-0">
               <a
                 href={`/api/documents/${previewDoc.id}/download`}
-                className="px-3.5 py-1.5 rounded-xl bg-amber-800 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-amber-800 hover:bg-amber-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md transition-colors"
               >
-                <Download className="w-3.5 h-3.5" />
+                <Download className="w-4 h-4" />
                 <span>Download</span>
               </a>
               <button
                 onClick={() => setPreviewDoc(null)}
-                className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-                title="Close"
+                className="min-h-[44px] min-w-[44px] p-2 text-stone-300 hover:text-white rounded-xl hover:bg-white/10 flex items-center justify-center cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6" />
               </button>
             </div>
           </div>
 
-          <div className="flex-1 bg-white rounded-b-2xl overflow-hidden relative flex items-center justify-center p-2 shadow-2xl">
+          <div className="flex-1 bg-white rounded-2xl overflow-hidden relative flex items-center justify-center p-2 max-w-5xl mx-auto w-full shadow-2xl">
             {previewDoc.file_type?.startsWith("image/") ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={`/api/documents/${previewDoc.id}/preview`}
                 alt={previewDoc.name}
-                className="max-h-full max-w-full object-contain rounded-lg"
+                className="max-h-full max-w-full object-contain"
               />
             ) : (
               <iframe
                 src={`/api/documents/${previewDoc.id}/preview`}
-                className="w-full h-full rounded-lg border-0"
+                className="w-full h-full border-0"
                 title={previewDoc.name}
               />
             )}
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={Boolean(docToDelete)}
+        title="Remove Document"
+        message={`Are you sure you want to permanently remove "${docToDelete?.name}"?`}
+        confirmText="Delete Document"
+        isDestructive={true}
+        onConfirm={handleDeleteDoc}
+        onCancel={() => setDocToDelete(null)}
+      />
     </div>
   );
 }
