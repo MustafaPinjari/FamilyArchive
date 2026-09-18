@@ -81,6 +81,7 @@ export interface FamilyDocument {
   expiry_date: string | null;
   notes: string | null;
   visibility: DocumentVisibility;
+  google_drive_file_id?: string | null;
   uploaded_by: string;
   uploaded_at: string;
   updated_at: string;

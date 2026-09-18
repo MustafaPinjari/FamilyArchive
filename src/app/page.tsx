@@ -18,8 +18,10 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Globe,
 } from "lucide-react";
 import { FamilyDocument, FamilyMember } from "@/types";
+import { useLanguage } from "@/lib/i18n";
 
 interface BranchData {
   id: string;
@@ -46,7 +48,116 @@ const QUICK_DOCUMENT_PRESETS = [
   { name: "Bank / Tax Record", category: "Financial", icon: "🏦" },
 ];
 
+// Sibling & descendants canonical tree structure
+const BRANCHES_DATA: BranchData[] = [
+  {
+    id: "akhtar",
+    name: "Akhtar",
+    nickname: "Bade Pappa",
+    role: "Eldest Brother • Family Lead",
+    isLead: true,
+    spouse: { id: "afroz", name: "Afroz" },
+    children: [
+      {
+        id: "naziya",
+        name: "Naziya",
+        spouse: { id: "azhar", name: "Azhar" },
+        children: [
+          { id: "atiqa", name: "Atiqa" },
+          { id: "maira", name: "Maira" },
+        ],
+      },
+      {
+        id: "mussavir",
+        name: "Mussavir",
+        spouse: { id: "saniya", name: "Saniya" },
+        children: [{ id: "yazdan", name: "Yazdan (Baby boy)" }],
+      },
+      {
+        id: "arshiya",
+        name: "Arshiya",
+        spouse: { id: "sharukh", name: "Sharukh" },
+        children: [
+          { id: "kabir", name: "Kabir" },
+          { id: "umar", name: "Umar" },
+        ],
+      },
+    ],
+  },
+  {
+    id: "shakur",
+    name: "Shakur",
+    nickname: "Elder Uncle",
+    role: "Second Brother",
+    spouse: { id: "chinni", name: "Chinni" },
+    children: [
+      { id: "eram", name: "Eram (Unmarried)" },
+      {
+        id: "saba",
+        name: "Saba",
+        spouse: { id: "farukh", name: "Farukh" },
+        children: [
+          { id: "zikra", name: "Zikra" },
+          { id: "aarish", name: "Aarish" },
+        ],
+      },
+      {
+        id: "sana",
+        name: "Sana",
+        spouse: { id: "altaf", name: "Altaf" },
+        children: [
+          { id: "alvina", name: "Alvina" },
+          { id: "alian", name: "Alian" },
+        ],
+      },
+      {
+        id: "tasmiya",
+        name: "Tasmiya",
+        spouse: { id: "tayyab", name: "Tayyab" },
+        children: [{ id: "azlan", name: "Azlan" }],
+      },
+    ],
+  },
+  {
+    id: "sattar",
+    name: "Sattar",
+    nickname: "Uncle",
+    role: "Third Brother",
+    spouse: { id: "guddi", name: "Guddi" },
+    children: [
+      {
+        id: "junaid",
+        name: "Junaid",
+        spouse: { id: "sufiya", name: "Sufiya" },
+        children: [{ id: "hamdan", name: "Hamdan" }],
+      },
+      {
+        id: "misbah",
+        name: "Misbah",
+        spouse: { id: "tanveer", name: "Tanveer" },
+        children: [{ id: "zoya", name: "Zoya" }],
+      },
+    ],
+  },
+  {
+    id: "mukhtar",
+    name: "Mukhtar",
+    nickname: "Youngest Brother",
+    role: "Youngest Brother",
+    spouse: { id: "shabana", name: "Shabana" },
+    children: [
+      { id: "mustafa", name: "Mustafa" },
+      {
+        id: "sharmin",
+        name: "Sharmin",
+        spouse: { id: "sameer", name: "Sameer" },
+      },
+    ],
+  },
+];
+
 export default function SimpleFamilyTree() {
+  const { language, toggleLanguage, t } = useLanguage();
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [memberDocs, setMemberDocs] = useState<FamilyDocument[]>([]);
@@ -77,7 +188,9 @@ export default function SimpleFamilyTree() {
     fetch("/api/family-tree")
       .then((res) => res.json())
       .then((data) => {
-        if (data?.members) setMembers(data.members);
+        if (data?.members && Array.isArray(data.members)) {
+          setMembers(data.members);
+        }
       })
       .catch((err) => console.error("Error loading family:", err));
 
@@ -89,10 +202,111 @@ export default function SimpleFamilyTree() {
   }, []);
 
   // When a person is clicked, load their profile and documents
+  // Fully resilient: opens immediately even if members list is loading or has case differences
   const handleOpenPerson = async (memberId: string) => {
-    const found = members.find((m) => m.id === memberId);
-    if (!found) return;
-    setSelectedMember(found);
+    const targetId = memberId.toLowerCase().trim();
+    let person = members.find((m) => m.id.toLowerCase() === targetId);
+
+    if (!person) {
+      // Find in BRANCHES_DATA
+      for (const b of BRANCHES_DATA) {
+        if (b.id.toLowerCase() === targetId) {
+          person = {
+            id: b.id,
+            first_name: b.name,
+            last_name: "Pinjari",
+            nickname: b.nickname,
+            family_role: b.role,
+            is_family_lead: b.isLead ? 1 : 0,
+            gender: "male",
+            generation: 2,
+            is_deceased: 0,
+          } as unknown as FamilyMember;
+          break;
+        }
+        if (b.spouse && b.spouse.id.toLowerCase() === targetId) {
+          person = {
+            id: b.spouse.id,
+            first_name: b.spouse.name,
+            last_name: "Pinjari",
+            gender: "female",
+            generation: 2,
+            family_role: `${b.name}'s Wife`,
+            is_deceased: 0,
+          } as unknown as FamilyMember;
+          break;
+        }
+        for (const child of b.children) {
+          if (child.id.toLowerCase() === targetId) {
+            person = {
+              id: child.id,
+              first_name: child.name,
+              last_name: "Pinjari",
+              gender: "male",
+              generation: 3,
+              is_deceased: 0,
+            } as unknown as FamilyMember;
+            break;
+          }
+          if (child.spouse && child.spouse.id.toLowerCase() === targetId) {
+            person = {
+              id: child.spouse.id,
+              first_name: child.spouse.name,
+              last_name: "Pinjari",
+              gender: "female",
+              generation: 3,
+              is_deceased: 0,
+            } as unknown as FamilyMember;
+            break;
+          }
+          const gc = child.children?.find((g) => g.id.toLowerCase() === targetId);
+          if (gc) {
+            person = {
+              id: gc.id,
+              first_name: gc.name,
+              last_name: "Pinjari",
+              generation: 4,
+              is_deceased: 0,
+            } as unknown as FamilyMember;
+            break;
+          }
+        }
+        if (person) break;
+      }
+
+      if (!person) {
+        if (targetId === "mohammad") {
+          person = {
+            id: "mohammad",
+            first_name: "Mohammad",
+            last_name: "Pinjari",
+            is_deceased: 1,
+            generation: 1,
+            family_role: "Grandfather",
+          } as unknown as FamilyMember;
+        } else if (targetId === "hamida") {
+          person = {
+            id: "hamida",
+            first_name: "Hamida",
+            last_name: "Pinjari",
+            is_deceased: 0,
+            generation: 1,
+            family_role: "Grandmother",
+          } as unknown as FamilyMember;
+        } else {
+          person = {
+            id: targetId,
+            first_name: targetId.charAt(0).toUpperCase() + targetId.slice(1),
+            last_name: "Pinjari",
+            generation: 2,
+            is_deceased: 0,
+          } as unknown as FamilyMember;
+        }
+      }
+    }
+
+    // Always immediately open the drawer
+    setSelectedMember(person);
     setShowUploadForm(false);
     setUploadFiles([]);
     setUploadSuccess(false);
@@ -101,16 +315,25 @@ export default function SimpleFamilyTree() {
     setLoadingDocs(true);
 
     try {
-      const res = await fetch(`/api/members/${memberId}`);
+      const res = await fetch(`/api/members/${encodeURIComponent(targetId)}`);
       if (res.ok) {
         const json = await res.json();
         setMemberDocs(json.documents || []);
         if (json.person) {
           setSelectedMember(json.person);
+          setMembers((prev) => {
+            const exists = prev.some((m) => m.id === json.person.id);
+            return exists
+              ? prev.map((m) => (m.id === json.person.id ? json.person : m))
+              : [...prev, json.person];
+          });
         }
+      } else {
+        setMemberDocs([]);
       }
     } catch (err) {
       console.error("Error loading docs:", err);
+      setMemberDocs([]);
     } finally {
       setLoadingDocs(false);
     }
@@ -221,112 +444,7 @@ export default function SimpleFamilyTree() {
   };
 
   // Sibling & descendants data
-  const branches: BranchData[] = [
-    {
-      id: "akhtar",
-      name: "Akhtar",
-      nickname: "Bade Pappa",
-      role: "Eldest Brother • Family Lead",
-      isLead: true,
-      spouse: { id: "afroz", name: "Afroz" },
-      children: [
-        {
-          id: "naziya",
-          name: "Naziya",
-          spouse: { id: "azhar", name: "Azhar" },
-          children: [
-            { id: "atiqa", name: "Atiqa" },
-            { id: "maira", name: "Maira" },
-          ],
-        },
-        {
-          id: "mussavir",
-          name: "Mussavir",
-          spouse: { id: "saniya", name: "Saniya" },
-          children: [{ id: "yazdan", name: "Yazdan (Baby boy)" }],
-        },
-        {
-          id: "arshiya",
-          name: "Arshiya",
-          spouse: { id: "sharukh", name: "Sharukh" },
-          children: [
-            { id: "kabir", name: "Kabir" },
-            { id: "umar", name: "Umar" },
-          ],
-        },
-      ],
-    },
-    {
-      id: "shakur",
-      name: "Shakur",
-      nickname: "Elder Uncle",
-      role: "Second Brother",
-      spouse: { id: "chinni", name: "Chinni" },
-      children: [
-        { id: "eram", name: "Eram (Unmarried)" },
-        {
-          id: "saba",
-          name: "Saba",
-          spouse: { id: "farukh", name: "Farukh" },
-          children: [
-            { id: "zikra", name: "Zikra" },
-            { id: "aarish", name: "Aarish" },
-          ],
-        },
-        {
-          id: "sana",
-          name: "Sana",
-          spouse: { id: "altaf", name: "Altaf" },
-          children: [
-            { id: "alvina", name: "Alvina" },
-            { id: "alian", name: "Alian" },
-          ],
-        },
-        {
-          id: "tasmiya",
-          name: "Tasmiya",
-          spouse: { id: "tayyab", name: "Tayyab" },
-          children: [{ id: "azlan", name: "Azlan" }],
-        },
-      ],
-    },
-    {
-      id: "sattar",
-      name: "Sattar",
-      nickname: "Uncle",
-      role: "Third Brother",
-      spouse: { id: "guddi", name: "Guddi" },
-      children: [
-        {
-          id: "junaid",
-          name: "Junaid",
-          spouse: { id: "sufiya", name: "Sufiya" },
-          children: [{ id: "hamdan", name: "Hamdan" }],
-        },
-        {
-          id: "misbah",
-          name: "Misbah",
-          spouse: { id: "tanveer", name: "Tanveer" },
-          children: [{ id: "zoya", name: "Zoya" }],
-        },
-      ],
-    },
-    {
-      id: "mukhtar",
-      name: "Mukhtar",
-      nickname: "Youngest Brother",
-      role: "Youngest Brother",
-      spouse: { id: "shabana", name: "Shabana" },
-      children: [
-        { id: "mustafa", name: "Mustafa" },
-        {
-          id: "sharmin",
-          name: "Sharmin",
-          spouse: { id: "sameer", name: "Sameer" },
-        },
-      ],
-    },
-  ];
+  const branches = BRANCHES_DATA;
 
   const filteredSearch = search.trim()
     ? members.filter(
@@ -345,20 +463,32 @@ export default function SimpleFamilyTree() {
             <span className="text-2xl">🌳</span>
             <div>
               <h1 className="text-lg font-bold text-stone-900 leading-tight">
-                Our Family
+                {t("appName")}
               </h1>
-              <p className="text-[11px] text-stone-500">Tap anyone to see documents</p>
+              <p className="text-[11px] text-stone-500">{t("appSubtitle")}</p>
             </div>
           </div>
 
-          <a
-            href="/login"
-            className="flex items-center gap-1 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full text-xs font-semibold"
-            title="Admin Login"
-          >
-            <Lock className="w-3.5 h-3.5" />
-            <span>Admin</span>
-          </a>
+          <div className="flex items-center gap-2">
+            {/* Language Switcher Toggle */}
+            <button
+              onClick={toggleLanguage}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-100/80 hover:bg-amber-200/80 text-amber-900 rounded-full text-xs font-semibold border border-amber-300 transition-colors shadow-2xs cursor-pointer"
+              title="Switch Language / भाषा बदलें"
+            >
+              <Globe className="w-3.5 h-3.5 text-amber-800" />
+              <span>{language === "en" ? "हिंदी" : "English"}</span>
+            </button>
+
+            <a
+              href="/login"
+              className="flex items-center gap-1 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-full text-xs font-semibold"
+              title="Admin Login"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>{t("adminBtn")}</span>
+            </a>
+          </div>
         </div>
 
         {/* Big Search Bar */}
@@ -369,13 +499,13 @@ export default function SimpleFamilyTree() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name (Mustafa, Akhtar, Aadhaar)..."
+              placeholder={t("searchPlaceholder")}
               className="w-full pl-11 pr-4 py-2.5 bg-stone-100/80 border border-stone-200 rounded-2xl text-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-600/30 focus:bg-white"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 p-1"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -442,7 +572,7 @@ export default function SimpleFamilyTree() {
             {/* Grandparents (Dada & Dadi) Card */}
             <div className="bg-gradient-to-r from-amber-900 via-stone-800 to-stone-900 text-white rounded-3xl p-5 shadow-md">
               <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300 mb-2">
-                Grandparents (Generation 1)
+                {t("grandparentsTitle")}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -461,8 +591,8 @@ export default function SimpleFamilyTree() {
                     </div>
                   )}
                   <div className="font-bold text-sm text-white">Mohammad</div>
-                  <div className="text-[11px] text-amber-200 mt-0.5">🕊️ In Memory</div>
-                  <div className="mt-2 text-[10px] text-stone-300 font-medium">Tap for docs →</div>
+                  <div className="text-[11px] text-amber-200 mt-0.5">{t("inMemoryBadge")}</div>
+                  <div className="mt-2 text-[10px] text-stone-300 font-medium">{t("tapForDocs")}</div>
                 </button>
 
                 <button
@@ -482,7 +612,7 @@ export default function SimpleFamilyTree() {
                   )}
                   <div className="font-bold text-sm text-white">Hamida</div>
                   <div className="text-[11px] text-stone-300 mt-0.5">Grandmother</div>
-                  <div className="mt-2 text-[10px] text-stone-300 font-medium">Tap for docs →</div>
+                  <div className="mt-2 text-[10px] text-stone-300 font-medium">{t("tapForDocs")}</div>
                 </button>
               </div>
             </div>
@@ -490,7 +620,7 @@ export default function SimpleFamilyTree() {
             {/* The 4 Brothers Branches */}
             <div className="space-y-3">
               <div className="text-xs font-bold uppercase tracking-wider text-stone-500 px-1 pt-2">
-                The 4 Brothers & Families (Eldest to Youngest)
+                {t("brothersTitle")}
               </div>
 
               {branches.map((b, idx) => {
@@ -541,12 +671,12 @@ export default function SimpleFamilyTree() {
                             )}
                             {b.isLead && (
                               <span className="text-[11px] font-bold text-amber-900 bg-amber-200 px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                👑 Lead
+                                {t("leadBadge")}
                               </span>
                             )}
                           </div>
                           <p className="text-xs text-stone-500 mt-0.5">
-                            Spouse: <strong>{b.spouse?.name}</strong> • {b.children.length} Children
+                            {t("spouseLabel")}: <strong>{b.spouse?.name}</strong> • {b.children.length} {t("childrenCount")}
                           </p>
                         </div>
                       </div>
@@ -563,19 +693,19 @@ export default function SimpleFamilyTree() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             onClick={() => handleOpenPerson(b.id)}
-                            className="flex-1 py-2.5 px-3 rounded-2xl bg-amber-800 hover:bg-amber-900 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5"
+                            className="flex-1 py-2.5 px-3 rounded-2xl bg-amber-800 hover:bg-amber-900 text-white font-semibold text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                           >
                             <FileText className="w-4 h-4" />
-                            <span>{b.name}&apos;s Documents</span>
+                            <span>{b.name}&apos;s {t("documentsCount")}</span>
                           </button>
 
                           {b.spouse && (
                             <button
                               onClick={() => handleOpenPerson(b.spouse!.id)}
-                              className="flex-1 py-2.5 px-3 rounded-2xl bg-white border border-stone-300 hover:border-amber-400 text-stone-800 font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5"
+                              className="flex-1 py-2.5 px-3 rounded-2xl bg-white border border-stone-300 hover:border-amber-400 text-stone-800 font-semibold text-xs shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <FileText className="w-4 h-4 text-amber-800" />
-                              <span>{b.spouse.name} (Wife)</span>
+                              <span>{b.spouse.name} ({t("wifeLabel")})</span>
                             </button>
                           )}
                         </div>
@@ -583,7 +713,7 @@ export default function SimpleFamilyTree() {
                         {/* Children List */}
                         <div className="space-y-2.5 pt-1">
                           <div className="text-[11px] font-bold uppercase tracking-wider text-stone-500">
-                            Children & Grandchildren:
+                            {t("childrenTitle")}
                           </div>
 
                           <div className="space-y-2">
@@ -606,10 +736,10 @@ export default function SimpleFamilyTree() {
 
                                   <button
                                     onClick={() => handleOpenPerson(child.id)}
-                                    className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold border border-amber-200 flex items-center gap-1"
+                                    className="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 text-xs font-semibold border border-amber-200 flex items-center gap-1 cursor-pointer"
                                   >
                                     <FileText className="w-3.5 h-3.5 text-amber-800" />
-                                    <span>Docs</span>
+                                    <span>{t("docsBtn")}</span>
                                   </button>
                                 </div>
 
@@ -886,23 +1016,60 @@ export default function SimpleFamilyTree() {
 
               {/* Document List */}
               {loadingDocs ? (
-                <div className="py-8 text-center text-sm text-stone-400">Loading documents...</div>
+                <div className="py-8 text-center text-sm text-stone-400 flex items-center justify-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-700" />
+                  <span>Loading documents...</span>
+                </div>
               ) : memberDocs.length > 0 ? (
                 <div className="space-y-2.5">
                   {memberDocs.map((doc) => (
                     <div
                       key={doc.id}
-                      className="p-3.5 rounded-2xl border border-stone-200 bg-stone-50 flex items-center justify-between gap-3 shadow-2xs"
+                      className="p-3 rounded-2xl border border-stone-200 bg-stone-50 hover:bg-white hover:border-amber-300 flex items-center justify-between gap-3 shadow-2xs transition-all"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center flex-shrink-0">
-                          <FileText className="w-5 h-5 text-amber-800" />
+                        {/* Interactive Thumbnail Preview */}
+                        <div
+                          onClick={() => setPreviewDoc(doc)}
+                          className="relative cursor-pointer flex-shrink-0 group"
+                          title="Tap to preview"
+                        >
+                          {doc.file_type.startsWith("image/") ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={`/api/documents/${doc.id}/preview`}
+                              alt={doc.name}
+                              className="w-12 h-12 rounded-xl object-cover border border-amber-200 shadow-2xs group-hover:ring-2 group-hover:ring-amber-500 transition-all"
+                            />
+                          ) : doc.file_type.includes("pdf") ? (
+                            <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-700 shadow-2xs group-hover:bg-rose-100 transition-colors">
+                              <FileText className="w-5 h-5 text-rose-600" />
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-rose-800">PDF</span>
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-amber-800 shadow-2xs group-hover:bg-amber-100 transition-colors">
+                              <FileText className="w-5 h-5 text-amber-700" />
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DOC</span>
+                            </div>
+                          )}
                         </div>
+
                         <div className="truncate">
-                          <div className="font-bold text-sm text-stone-900 truncate">
-                            {doc.name}
+                          <div className="font-bold text-sm text-stone-900 truncate flex items-center gap-1.5">
+                            <span
+                              onClick={() => setPreviewDoc(doc)}
+                              className="truncate hover:text-amber-800 cursor-pointer"
+                            >
+                              {doc.name}
+                            </span>
+                            <button
+                              onClick={() => setPreviewDoc(doc)}
+                              className="text-[10px] font-bold text-amber-900 bg-amber-100/90 hover:bg-amber-200 px-1.5 py-0.5 rounded cursor-pointer transition-colors flex-shrink-0"
+                            >
+                              {t("preview")}
+                            </button>
                           </div>
-                          <div className="text-xs text-stone-500">
+                          <div className="text-xs text-stone-500 mt-0.5">
                             {doc.category} • {(doc.file_size / 1024).toFixed(0)} KB
                           </div>
                         </div>
@@ -915,12 +1082,12 @@ export default function SimpleFamilyTree() {
                           className="px-3 py-1.5 rounded-xl bg-amber-800 text-white text-xs font-semibold shadow-xs hover:bg-amber-900 flex items-center gap-1 cursor-pointer"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          <span>View</span>
+                          <span>{t("viewBtn")}</span>
                         </button>
 
                         <a
                           href={`/api/documents/${doc.id}/download`}
-                          className="p-1.5 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-800"
+                          className="p-1.5 rounded-xl bg-stone-200 hover:bg-stone-300 text-stone-800 transition-colors"
                           title="Download to Phone"
                         >
                           <Download className="w-4 h-4" />
@@ -940,9 +1107,9 @@ export default function SimpleFamilyTree() {
               ) : (
                 <div className="p-6 text-center bg-stone-50 rounded-2xl border border-dashed border-stone-200">
                   <FileText className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-                  <p className="text-sm font-semibold text-stone-700">No documents yet</p>
+                  <p className="text-sm font-semibold text-stone-700">{t("noDocsYet")}</p>
                   <p className="text-xs text-stone-400 mt-1">
-                    Tap the green &quot;+ Add Document(s)&quot; button above to take a photo or upload!
+                    {t("noDocsPrompt")}
                   </p>
                 </div>
               )}

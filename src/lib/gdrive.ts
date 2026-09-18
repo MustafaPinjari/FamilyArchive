@@ -254,10 +254,17 @@ export async function testGoogleDriveConnection(): Promise<{
       folderId: config.folderId,
     };
   } catch (error: unknown) {
-    const err = error as Error;
+    const err = error as { code?: number; message?: string };
+    let friendlyMessage = err.message || "Failed to connect to Google Drive";
+
+    if (err.code === 404 || err.message?.includes("File not found")) {
+      friendlyMessage =
+        "Folder not found or not shared. Please open Google Drive, right-click your folder, click 'Share', and paste your Service Account email with 'Editor' permissions.";
+    }
+
     return {
       success: false,
-      message: err.message || "Failed to connect to Google Drive",
+      message: friendlyMessage,
     };
   }
 }

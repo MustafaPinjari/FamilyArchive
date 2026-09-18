@@ -280,11 +280,37 @@ export function DocumentsClient({
                         title="Select document"
                       />
 
-                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-amber-700" />
+                      {/* Interactive Document Thumbnail Preview */}
+                      <div
+                        onClick={() => setPreviewDoc(doc)}
+                        className="cursor-pointer flex-shrink-0 group"
+                        title="Click to preview document"
+                      >
+                        {doc.file_type?.startsWith("image/") ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`/api/documents/${doc.id}/preview`}
+                            alt={doc.name}
+                            className="w-12 h-12 rounded-xl object-cover border border-amber-200 shadow-2xs group-hover:ring-2 group-hover:ring-amber-500 transition-all"
+                          />
+                        ) : doc.file_type?.includes("pdf") ? (
+                          <div className="w-12 h-12 rounded-xl bg-rose-50 border border-rose-200 flex flex-col items-center justify-center text-rose-700 shadow-2xs group-hover:bg-rose-100 transition-colors">
+                            <FileText className="w-5 h-5 text-rose-600" />
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-rose-800">PDF</span>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-amber-800 shadow-2xs group-hover:bg-amber-100 transition-colors">
+                            <FileText className="w-5 h-5 text-amber-700" />
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-amber-900">DOC</span>
+                          </div>
+                        )}
                       </div>
+
                       <div className="truncate">
-                        <h4 className="font-semibold text-stone-900 text-sm truncate">
+                        <h4
+                          onClick={() => setPreviewDoc(doc)}
+                          className="font-semibold text-stone-900 text-sm truncate hover:text-amber-800 cursor-pointer"
+                        >
                           {doc.name}
                         </h4>
                         <p className="text-xs text-stone-500 flex items-center gap-1.5 mt-0.5">
