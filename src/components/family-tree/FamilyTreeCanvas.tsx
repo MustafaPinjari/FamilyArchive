@@ -794,11 +794,21 @@ export function FamilyTreeCanvas({
                 >
                   <div className="flex items-center gap-3">
                     {members.find((m) => m.id === "mohammad")?.photo_url ? (
-                      <img
-                        src={members.find((m) => m.id === "mohammad")!.photo_url!}
-                        alt="Mohammad"
-                        className="w-12 h-12 rounded-full object-cover border border-amber-300 flex-shrink-0"
-                      />
+                      <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                        <img
+                          src={members.find((m) => m.id === "mohammad")!.photo_url!}
+                          alt=""
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                            const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                            if (fb) (fb as HTMLElement).style.display = "flex";
+                          }}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                        <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                          M
+                        </div>
+                      </div>
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
                         M
@@ -823,11 +833,21 @@ export function FamilyTreeCanvas({
                 >
                   <div className="flex items-center gap-3">
                     {members.find((m) => m.id === "hamida")?.photo_url ? (
-                      <img
-                        src={members.find((m) => m.id === "hamida")!.photo_url!}
-                        alt="Hamida"
-                        className="w-12 h-12 rounded-full object-cover border border-amber-300 flex-shrink-0"
-                      />
+                      <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                        <img
+                          src={members.find((m) => m.id === "hamida")!.photo_url!}
+                          alt=""
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                            const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                            if (fb) (fb as HTMLElement).style.display = "flex";
+                          }}
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                        <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                          H
+                        </div>
+                      </div>
                     ) : (
                       <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
                         H
@@ -881,11 +901,25 @@ export function FamilyTreeCanvas({
                   >
                     <div className="flex items-center gap-3.5">
                       {bMember?.photo_url ? (
-                        <img
-                          src={bMember.photo_url}
-                          alt={branch.name}
-                          className="w-12 h-12 rounded-2xl object-cover border border-amber-300/80 shadow-2xs flex-shrink-0"
-                        />
+                        <div className="relative w-12 h-12 rounded-2xl overflow-hidden border border-amber-300/80 shadow-2xs flex-shrink-0">
+                          <img
+                            src={bMember.photo_url}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                              if (fb) (fb as HTMLElement).style.display = "flex";
+                            }}
+                            className="w-12 h-12 rounded-2xl object-cover"
+                          />
+                          <div
+                            className={`avatar-fb hidden absolute inset-0 w-12 h-12 rounded-2xl items-center justify-center text-lg font-serif font-bold ${
+                              branch.isLead ? "bg-amber-900 text-white" : "bg-stone-200 text-stone-800"
+                            }`}
+                          >
+                            {branch.name[0]}
+                          </div>
+                        </div>
                       ) : (
                         <div
                           className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-serif font-bold flex-shrink-0 ${

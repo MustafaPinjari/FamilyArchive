@@ -3,6 +3,8 @@ import { getSessionUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { FamilyDocument, FamilyMember } from "@/types";
 
+import { resolvePhotoUrl } from "@/lib/photo-helper";
+
 export async function GET(
   _request: Request,
   props: { params: Promise<{ id: string }> }
@@ -21,7 +23,7 @@ export async function GET(
 
     const person: FamilyMember = {
       ...rawPerson,
-      photo_url: rawPerson.profile_photo ? `/api/photos/${encodeURIComponent(rawPerson.profile_photo)}/view` : null,
+      photo_url: resolvePhotoUrl(rawPerson.profile_photo),
     };
 
     // Kinship lookup

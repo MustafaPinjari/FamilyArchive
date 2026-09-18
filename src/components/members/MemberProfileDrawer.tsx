@@ -151,11 +151,29 @@ export function MemberProfileDrawer({
                 {/* Avatar with photo and camera upload */}
                 <div className="relative flex-shrink-0">
                   {person?.photo_url ? (
-                    <img
-                      src={person.photo_url}
-                      alt={person.first_name}
-                      className="w-20 h-20 rounded-2xl object-cover shadow-md border-2 border-amber-300"
-                    />
+                    <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-md border-2 border-amber-300">
+                      <img
+                        src={person.photo_url}
+                        alt=""
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                          if (fb) (fb as HTMLElement).style.display = "flex";
+                        }}
+                        className="w-20 h-20 rounded-2xl object-cover"
+                      />
+                      <div
+                        className={`avatar-fb hidden absolute inset-0 w-20 h-20 items-center justify-center font-serif text-2xl font-bold ${
+                          isDeceased
+                            ? "bg-stone-200 text-stone-700"
+                            : isLead
+                            ? "bg-gradient-to-br from-amber-600 to-amber-800 text-amber-50"
+                            : "bg-gradient-to-br from-stone-800 to-stone-950 text-amber-200"
+                        }`}
+                      >
+                        {person?.first_name ? person.first_name[0] : "?"}
+                      </div>
+                    </div>
                   ) : (
                     <div
                       className={`w-20 h-20 rounded-2xl flex items-center justify-center font-serif text-2xl font-bold shadow-md ${

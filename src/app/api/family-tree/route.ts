@@ -3,6 +3,8 @@ import { getDb } from "@/lib/db";
 import { computeFamilyTreeLayout } from "@/lib/tree-layout";
 import { FamilyMember, Marriage, Relationship } from "@/types";
 
+import { resolvePhotoUrl } from "@/lib/photo-helper";
+
 export async function GET() {
   try {
     const db = getDb();
@@ -14,7 +16,7 @@ export async function GET() {
 
     const members = rawMembers.map((m) => ({
       ...m,
-      photo_url: m.profile_photo ? `/api/photos/${encodeURIComponent(m.profile_photo)}/view` : null,
+      photo_url: resolvePhotoUrl(m.profile_photo),
     }));
 
     const marriages = db.prepare("SELECT * FROM marriages").all() as Marriage[];

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb, PHOTOS_DIR } from "@/lib/db";
 import { logAuditAction } from "@/lib/audit";
+import { resolvePhotoUrl } from "@/lib/photo-helper";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -71,14 +72,22 @@ export async function POST(
     }
 
     if (!uploadedToDrive) {
+      // In serverless environments (Vercel / Netlify) where Google Drive quota fails,
+      // store the photo as an inline base64 Data URI so it is 100% self-contained
+      // and can never 404 across ephemeral serverless instances!
+      const mime = file.type || "image/jpeg";
+      const base64 = buffer.toString("base64");
+      storedValue = `data:${mime};base64,${base64}`;
+
+      // Also write to public/photos and PHOTOS_DIR if writable (local dev)
+      try {
+        const publicPhotosDir = path.join(process.cwd(), "public", "photos");
+        if (!fs.existsSync(publicPhotosDir)) fs.mkdirSync(publicPhotosDir, { recursive: true });
+        fs.writeFileSync(path.join(publicPhotosDir, filename), buffer);
+      } catch {}
       try {
         fs.writeFileSync(targetPath, buffer);
-      } catch (fsErr) {
-        console.error("Local disk save failed (read-only filesystem):", fsErr);
-        // Fallback for read-only serverless environments without Google Drive: store as inline data URI
-        const base64 = buffer.toString("base64");
-        storedValue = `data:${file.type || "image/jpeg"};base64,${base64}`;
-      }
+      } catch {}
     }
 
     // Delete old profile photo if exists
@@ -103,10 +112,7 @@ export async function POST(
       }
     }
 
-    let photoUrl = `/api/photos/${encodeURIComponent(storedValue)}/view`;
-    if (storedValue.startsWith("data:")) {
-      photoUrl = storedValue;
-    }
+    const photoUrl = resolvePhotoUrl(storedValue);
 
     // Update member record in DB
     db.prepare("UPDATE family_members SET profile_photo = ?, updated_at = ? WHERE id = ?").run(

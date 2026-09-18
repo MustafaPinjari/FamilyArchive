@@ -300,9 +300,10 @@ export default function FamilyHomePage() {
 
     try {
       const res = await fetch(`/api/members/${encodeURIComponent(targetId)}`);
+      let serverDocs: FamilyDocument[] = [];
       if (res.ok) {
         const json = await res.json();
-        setMemberDocs(json.documents || []);
+        serverDocs = json.documents || [];
         if (json.person) {
           setSelectedMember(json.person);
           setMembers((prev) => {
@@ -312,25 +313,94 @@ export default function FamilyHomePage() {
               : [...prev, json.person];
           });
         }
-      } else {
-        setMemberDocs([]);
+      }
+
+      // Merge with localStorage cached docs so documents NEVER vanish on Vercel container refresh
+      try {
+        const localKey = `family_cached_docs_${targetId}`;
+        const localDocs: FamilyDocument[] = JSON.parse(localStorage.getItem(localKey) || "[]");
+        const combined = [...serverDocs];
+        for (const ld of localDocs) {
+          if (!combined.some((sd) => sd.id === ld.id)) {
+            combined.push(ld);
+          }
+        }
+        setMemberDocs(combined);
+      } catch {
+        setMemberDocs(serverDocs);
       }
     } catch (err) {
       console.error("Error loading member documents:", err);
-      setMemberDocs([]);
+      try {
+        const localDocs: FamilyDocument[] = JSON.parse(
+          localStorage.getItem(`family_cached_docs_${targetId}`) || "[]"
+        );
+        setMemberDocs(localDocs);
+      } catch {
+        setMemberDocs([]);
+      }
     } finally {
       setLoadingDocs(false);
     }
   };
 
+  // Helper to compress camera/phone photo to lightweight JPEG before upload (<35KB)
+  const compressPhotoForUpload = (file: File, maxSize = 360, quality = 0.85): Promise<File> => {
+    return new Promise((resolve) => {
+      if (!file.type.startsWith("image/") || file.size < 40 * 1024) {
+        return resolve(file);
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > height) {
+            if (width > maxSize) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return resolve(file);
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+              } else {
+                resolve(file);
+              }
+            },
+            "image/jpeg",
+            quality
+          );
+        };
+        img.onerror = () => resolve(file);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => resolve(file);
+      reader.readAsDataURL(file);
+    });
+  };
+
   // Profile Photo Upload Handler
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !selectedMember) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile || !selectedMember) return;
     setUploadingPhoto(true);
     setPhotoFeedback(null);
 
     try {
+      const file = await compressPhotoForUpload(rawFile);
       const formData = new FormData();
       formData.append("photo", file);
 
@@ -365,12 +435,17 @@ export default function FamilyHomePage() {
   const handleDeleteMemberDoc = async (docId: string, docName: string) => {
     if (!confirm(`Are you sure you want to remove "${docName}"?`)) return;
     try {
-      const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
-      if (res.ok) {
-        setMemberDocs((prev) => prev.filter((d) => d.id !== docId));
-      }
+      await fetch(`/api/documents/${docId}`, { method: "DELETE" });
     } catch (err) {
       console.error("Delete doc error:", err);
+    }
+    setMemberDocs((prev) => prev.filter((d) => d.id !== docId));
+    if (selectedMember) {
+      try {
+        const key = `family_cached_docs_${selectedMember.id}`;
+        const existing: FamilyDocument[] = JSON.parse(localStorage.getItem(key) || "[]");
+        localStorage.setItem(key, JSON.stringify(existing.filter((d) => d.id !== docId)));
+      } catch {}
     }
   };
 
@@ -405,11 +480,25 @@ export default function FamilyHomePage() {
       setUploadSuccess(true);
       setUploadFiles([]);
 
-      // Refresh person documents
-      const docsRes = await fetch(`/api/members/${selectedMember.id}`);
-      if (docsRes.ok) {
-        const json = await docsRes.json();
-        setMemberDocs(json.documents || []);
+      // Persist newly uploaded documents in localStorage cache so they never vanish on refresh
+      if (data.documents && data.documents.length > 0 && selectedMember) {
+        try {
+          const key = `family_cached_docs_${selectedMember.id}`;
+          const existing: FamilyDocument[] = JSON.parse(localStorage.getItem(key) || "[]");
+          const merged = [
+            ...data.documents,
+            ...existing.filter((d) => !data.documents.some((nd: any) => nd.id === d.id)),
+          ];
+          localStorage.setItem(key, JSON.stringify(merged));
+          setMemberDocs(merged);
+        } catch {}
+      } else {
+        // Fallback: Refresh person documents from server
+        const docsRes = await fetch(`/api/members/${selectedMember.id}`);
+        if (docsRes.ok) {
+          const json = await docsRes.json();
+          setMemberDocs(json.documents || []);
+        }
       }
 
       setTimeout(() => {
@@ -516,11 +605,21 @@ export default function FamilyHomePage() {
                   >
                     <div className="flex items-center gap-3">
                       {m.photo_url ? (
-                        <img
-                          src={m.photo_url}
-                          alt={m.first_name}
-                          className="w-11 h-11 rounded-full object-cover border border-amber-300 flex-shrink-0"
-                        />
+                        <div className="relative w-11 h-11 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                          <img
+                            src={m.photo_url}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                              if (fb) (fb as HTMLElement).style.display = "flex";
+                            }}
+                            className="w-11 h-11 rounded-full object-cover"
+                          />
+                          <div className="avatar-fb hidden absolute inset-0 w-11 h-11 bg-stone-200 text-stone-800 font-bold items-center justify-center">
+                            {m.first_name[0]}
+                          </div>
+                        </div>
                       ) : (
                         <div className="w-11 h-11 rounded-full bg-stone-200 text-stone-800 font-bold flex items-center justify-center flex-shrink-0">
                           {m.first_name[0]}
@@ -651,13 +750,23 @@ export default function FamilyHomePage() {
                   >
                     <div className="flex items-center gap-3">
                       {members.find((m) => m.id === "mohammad")?.photo_url ? (
-                        <img
-                          src={members.find((m) => m.id === "mohammad")!.photo_url!}
-                          alt="Mohammad"
-                          className="w-12 h-12 rounded-full object-cover border border-amber-300"
-                        />
+                        <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                          <img
+                            src={members.find((m) => m.id === "mohammad")!.photo_url!}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                              if (fb) (fb as HTMLElement).style.display = "flex";
+                            }}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                          <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                            M
+                          </div>
+                        </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
                           M
                         </div>
                       )}
@@ -680,13 +789,23 @@ export default function FamilyHomePage() {
                   >
                     <div className="flex items-center gap-3">
                       {members.find((m) => m.id === "hamida")?.photo_url ? (
-                        <img
-                          src={members.find((m) => m.id === "hamida")!.photo_url!}
-                          alt="Hamida"
-                          className="w-12 h-12 rounded-full object-cover border border-amber-300"
-                        />
+                        <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                          <img
+                            src={members.find((m) => m.id === "hamida")!.photo_url!}
+                            alt=""
+                            onError={(e) => {
+                              e.currentTarget.style.display = "none";
+                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                              if (fb) (fb as HTMLElement).style.display = "flex";
+                            }}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                          <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                            H
+                          </div>
+                        </div>
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
                           H
                         </div>
                       )}
@@ -732,11 +851,25 @@ export default function FamilyHomePage() {
                       >
                         <div className="flex items-center gap-3.5">
                           {bMember?.photo_url ? (
-                            <img
-                              src={bMember.photo_url}
-                              alt={b.name}
-                              className="w-13 h-13 rounded-2xl object-cover border border-amber-300/80 shadow-2xs flex-shrink-0"
-                            />
+                            <div className="relative w-13 h-13 rounded-2xl overflow-hidden border border-amber-300/80 shadow-2xs flex-shrink-0">
+                              <img
+                                src={bMember.photo_url}
+                                alt=""
+                                onError={(e) => {
+                                  e.currentTarget.style.display = "none";
+                                  const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                                  if (fb) (fb as HTMLElement).style.display = "flex";
+                                }}
+                                className="w-13 h-13 rounded-2xl object-cover"
+                              />
+                              <div
+                                className={`avatar-fb hidden absolute inset-0 w-13 h-13 rounded-2xl items-center justify-center text-xl font-serif font-bold ${
+                                  b.isLead ? "bg-amber-900 text-white" : "bg-stone-200 text-stone-800"
+                                }`}
+                              >
+                                {b.name[0]}
+                              </div>
+                            </div>
                           ) : (
                             <div
                               className={`w-13 h-13 rounded-2xl flex items-center justify-center text-xl font-serif font-bold flex-shrink-0 ${
@@ -880,11 +1013,21 @@ export default function FamilyHomePage() {
                 {/* Portrait Avatar */}
                 <div className="relative flex-shrink-0">
                   {selectedMember.photo_url ? (
-                    <img
-                      src={selectedMember.photo_url}
-                      alt={selectedMember.first_name}
-                      className="w-14 h-14 rounded-2xl object-cover shadow-2xs border border-amber-300"
-                    />
+                    <div className="relative w-14 h-14 rounded-2xl overflow-hidden shadow-2xs border border-amber-300">
+                      <img
+                        src={selectedMember.photo_url}
+                        alt=""
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                          const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                          if (fb) (fb as HTMLElement).style.display = "flex";
+                        }}
+                        className="w-14 h-14 rounded-2xl object-cover"
+                      />
+                      <div className="avatar-fb hidden absolute inset-0 w-14 h-14 bg-amber-900 text-white font-serif font-bold text-xl items-center justify-center">
+                        {selectedMember.first_name[0]}
+                      </div>
+                    </div>
                   ) : (
                     <div className="w-14 h-14 rounded-2xl bg-amber-900 text-white font-serif font-bold text-xl flex items-center justify-center">
                       {selectedMember.first_name[0]}
