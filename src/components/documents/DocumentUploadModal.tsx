@@ -146,11 +146,25 @@ export function DocumentUploadModal({
               required
               className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-300 rounded-2xl text-sm font-semibold text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
             >
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.first_name} {m.nickname ? `(${m.nickname})` : ""}
-                </option>
-              ))}
+              {[1, 2, 3, 4].map((gen) => {
+                const genMembers = members.filter((m) => m.generation === gen);
+                if (genMembers.length === 0) return null;
+                const genLabels: Record<number, string> = {
+                  1: "Generation 1 • Founding Patriarchs",
+                  2: "Generation 2 • Branch Elders (Akhtar, Mukhtar, Shakur, Sattar)",
+                  3: "Generation 3 • Cousins & Spouses (Naziya, Azhar, Mustafa, Mussavir...)",
+                  4: "Generation 4 • Children & Grandchildren (Atiqa, Maira, Yazdan...)",
+                };
+                return (
+                  <optgroup key={gen} label={genLabels[gen] || `Generation ${gen}`}>
+                    {genMembers.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.first_name} {m.nickname ? `(${m.nickname})` : ""} {m.family_role ? `— ${m.family_role}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
             </select>
           </div>
 

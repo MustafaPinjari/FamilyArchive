@@ -55,3 +55,41 @@
   background-size: 28px 28px;
   background-image: radial-gradient(circle, #d5cac0 1px, transparent 1px);
 }
+
+@media print {
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  header, nav, footer, aside, .print\:hidden, [class*="print:hidden"], .id-card-screen-only {
+    display: none !important;
+  }
+
+  .id-card-print-target {
+    visibility: visible !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 24px !important;
+    width: 100% !important;
+    max-width: 620px !important;
+    margin: 0 auto !important;
+    padding: 10px 0 !important;
+    page-break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}

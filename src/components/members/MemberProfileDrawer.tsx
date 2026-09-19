@@ -20,6 +20,7 @@ import {
 import { FamilyDocument, FamilyMember } from "@/types";
 import { DocumentPreviewModal } from "../documents/DocumentPreviewModal";
 import { DocumentUploadModal } from "../documents/DocumentUploadModal";
+import { IdCardModal } from "../id-card/IdCardModal";
 
 interface MemberProfileDrawerProps {
   memberId: string | null;
@@ -52,6 +53,7 @@ export function MemberProfileDrawer({
   const [previewDoc, setPreviewDoc] = useState<FamilyDocument | null>(null);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [idCardOpen, setIdCardOpen] = useState(false);
 
   const fetchProfile = async (id: string) => {
     setLoading(true);
@@ -115,7 +117,7 @@ export function MemberProfileDrawer({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-hidden bg-stone-900/60 backdrop-blur-sm animate-in fade-in">
+      <div className="fixed inset-0 z-50 overflow-hidden bg-stone-900/60 backdrop-blur-sm animate-in fade-in print:hidden">
         <div className="absolute inset-y-0 right-0 max-w-full flex pl-6 sm:pl-12">
           <div className="w-screen max-w-xl bg-white shadow-2xl border-l border-stone-200 flex flex-col animate-in slide-in-from-right duration-300">
             {/* Top Bar with actions */}
@@ -289,6 +291,14 @@ export function MemberProfileDrawer({
                   <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900">
                     {data?.photos?.length || 0}
                   </span>
+                </button>
+
+                <button
+                  onClick={() => setIdCardOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-100/80 hover:bg-amber-200/80 text-amber-950 border border-amber-300/80 text-xs font-bold transition-all shadow-2xs cursor-pointer ml-auto"
+                  title="View official permanent ID card"
+                >
+                  <span>🪪 ID Card</span>
                 </button>
               </div>
             </div>
@@ -565,6 +575,17 @@ export function MemberProfileDrawer({
           if (memberId) fetchProfile(memberId);
         }}
       />
+
+      {/* ID Card Modal */}
+      {data?.person && (
+        <IdCardModal
+          isOpen={idCardOpen}
+          onClose={() => setIdCardOpen(false)}
+          member={data.person}
+          allMembers={allMembers}
+          kinship={data.kinship}
+        />
+      )}
     </>
   );
 }
