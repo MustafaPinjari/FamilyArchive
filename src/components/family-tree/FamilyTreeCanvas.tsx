@@ -19,8 +19,9 @@ import {
   Compass,
 } from "lucide-react";
 import { TreeLayoutResult, TreeNode, TreeEdge } from "@/lib/tree-layout";
-import { FamilyMember } from "@/types";
+import { FamilyMember, Marriage, Relationship } from "@/types";
 import { useLanguage } from "@/lib/i18n";
+import { buildFamilyHierarchy } from "@/lib/family-tree-structure";
 
 interface GrandchildItem {
   id: string;
@@ -43,115 +44,11 @@ interface BranchItem {
   children: ChildItem[];
 }
 
-const BRANCHES_STRUCTURE: BranchItem[] = [
-  {
-    id: "akhtar",
-    name: "Akhtar",
-    nickname: "Bade Pappa",
-    isLead: true,
-    spouse: { id: "afroz", name: "Afroz" },
-    children: [
-      {
-        id: "naziya",
-        name: "Naziya",
-        spouse: { id: "azhar", name: "Azhar" },
-        children: [
-          { id: "atiqa", name: "Atiqa" },
-          { id: "maira", name: "Maira" },
-        ],
-      },
-      {
-        id: "mussavir",
-        name: "Mussavir",
-        spouse: { id: "saniya", name: "Saniya" },
-        children: [{ id: "yazdan", name: "Yazdan" }],
-      },
-      {
-        id: "arshiya",
-        name: "Arshiya",
-        spouse: { id: "sharukh", name: "Sharukh" },
-        children: [
-          { id: "kabir", name: "Kabir" },
-          { id: "umar", name: "Umar" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "shakur",
-    name: "Shakur",
-    nickname: "Elder Uncle",
-    isLead: false,
-    spouse: { id: "chinni", name: "Chinni" },
-    children: [
-      { id: "eram", name: "Eram" },
-      {
-        id: "saba",
-        name: "Saba",
-        spouse: { id: "farukh", name: "Farukh" },
-        children: [
-          { id: "zikra", name: "Zikra" },
-          { id: "aarish", name: "Aarish" },
-        ],
-      },
-      {
-        id: "sana",
-        name: "Sana",
-        spouse: { id: "altaf", name: "Altaf" },
-        children: [
-          { id: "alvina", name: "Alvina" },
-          { id: "alian", name: "Alian" },
-        ],
-      },
-      {
-        id: "tasmiya",
-        name: "Tasmiya",
-        spouse: { id: "tayyab", name: "Tayyab" },
-        children: [{ id: "azlan", name: "Azlan" }],
-      },
-    ],
-  },
-  {
-    id: "sattar",
-    name: "Sattar",
-    nickname: "Uncle",
-    isLead: false,
-    spouse: { id: "guddi", name: "Guddi" },
-    children: [
-      {
-        id: "junaid",
-        name: "Junaid",
-        spouse: { id: "sufiya", name: "Sufiya" },
-        children: [{ id: "hamdan", name: "Hamdan" }],
-      },
-      {
-        id: "misbah",
-        name: "Misbah",
-        spouse: { id: "tanveer", name: "Tanveer" },
-        children: [{ id: "zoya", name: "Zoya" }],
-      },
-    ],
-  },
-  {
-    id: "mukhtar",
-    name: "Mukhtar",
-    nickname: "Youngest Brother",
-    isLead: false,
-    spouse: { id: "shabana", name: "Shabana" },
-    children: [
-      { id: "mustafa", name: "Mustafa" },
-      {
-        id: "sharmin",
-        name: "Sharmin",
-        spouse: { id: "sameer", name: "Sameer" },
-      },
-    ],
-  },
-];
-
 interface FamilyTreeCanvasProps {
   layout: TreeLayoutResult;
   members: FamilyMember[];
+  marriages?: Marriage[];
+  relationships?: Relationship[];
   onSelectMember: (id: string) => void;
   selectedMemberId: string | null;
 }
@@ -159,11 +56,45 @@ interface FamilyTreeCanvasProps {
 export function FamilyTreeCanvas({
   layout,
   members,
+  marriages = [],
+  relationships = [],
   onSelectMember,
   selectedMemberId,
 }: FamilyTreeCanvasProps) {
   const { language, tName } = useLanguage();
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Dynamically resolve branches from SQLite database
+  const branches: BranchItem[] = useMemo(() => {
+    const rawBranches = buildFamilyHierarchy(members, marriages, relationships);
+    return rawBranches.map((b) => ({
+      id: b.lead.id,
+      name: b.lead.first_name,
+      nickname: b.lead.nickname || undefined,
+      isLead: Boolean(b.lead.is_family_lead),
+      spouse: b.spouse ? { id: b.spouse.id, name: b.spouse.first_name } : undefined,
+      children: b.households.map((hh) => ({
+        id: hh.primary.id,
+        name: hh.primary.first_name,
+        spouse: hh.spouse ? { id: hh.spouse.id, name: hh.spouse.first_name } : undefined,
+        children: hh.children.map((c) => ({ id: c.id, name: c.first_name })),
+      })),
+    }));
+  }, [members, marriages, relationships]);
+
+  // Generation 1 root members
+  const gen1Members = useMemo(() => {
+    return members
+      .filter((m) => m.generation === 1)
+      .sort((a, b) => a.display_order - b.display_order);
+  }, [members]);
+
+  // Jump to items in canvas
+  const jumpItems = useMemo(() => {
+    const roots = gen1Members.map((r) => ({ id: r.id, name: r.first_name }));
+    const branchLeads = branches.map((b) => ({ id: b.id, name: b.name }));
+    return [...roots, ...branchLeads];
+  }, [gen1Members, branches]);
 
   // Viewport Transform State
   const [zoom, setZoom] = useState(1);
@@ -173,17 +104,17 @@ export function FamilyTreeCanvas({
 
   // Mode & Filtering
   const [viewMode, setViewMode] = useState<"canvas" | "mobile_explorer">("mobile_explorer");
-  const [selectedBranchFilter, setSelectedBranchFilter] = useState<
-    "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
-  >("all");
+  const [selectedBranchFilter, setSelectedBranchFilter] = useState<string>("all");
 
-  const [expandedBranches, setExpandedBranches] = useState<Record<string, boolean>>({
-    mohammad: true,
-    akhtar: true,
-    shakur: true,
-    sattar: true,
-    mukhtar: true,
-  });
+  const [expandedBranches, setExpandedBranches] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const initial: Record<string, boolean> = { roots: true };
+    branches.forEach((b) => {
+      initial[b.id] = true;
+    });
+    setExpandedBranches(initial);
+  }, [branches]);
 
   // Search in tree
   const [treeSearch, setTreeSearch] = useState("");
@@ -349,16 +280,15 @@ export function FamilyTreeCanvas({
   };
 
   // Branch filter action
-  const handleBranchFilterClick = (
-    branchId: "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
-  ) => {
+  const handleBranchFilterClick = (branchId: string) => {
     setSelectedBranchFilter(branchId);
     if (branchId !== "all" && branchId !== "roots") {
       setExpandedBranches((prev) => ({ ...prev, [branchId]: true }));
     }
     if (viewMode === "canvas") {
       if (branchId === "roots") {
-        jumpToNode("mohammad");
+        const rootId = gen1Members[0]?.id || "mohammad";
+        jumpToNode(rootId);
       } else if (branchId !== "all") {
         jumpToNode(branchId);
       } else {
@@ -508,29 +438,37 @@ export function FamilyTreeCanvas({
         {/* Quick Branch Filter Chips (Mobile Friendly, Horizontal Scrolling) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 scrollbar-none pointer-events-auto">
           {[
-            { id: "all", labelEn: "All Branches", labelHi: "संपूर्ण परिवार" },
-            { id: "roots", labelEn: "Mohammad & Hamida", labelHi: "दादा-दादी" },
-            { id: "akhtar", labelEn: "1. Akhtar (Lead)", labelHi: "१. अख़्तर (मुखिया)" },
-            { id: "shakur", labelEn: "2. Shakur", labelHi: "२. शकूर" },
-            { id: "sattar", labelEn: "3. Sattar", labelHi: "३. सत्तार" },
-            { id: "mukhtar", labelEn: "4. Mukhtar", labelHi: "४. मुख़्तार" },
+            { id: "all", label: language === "hi" ? "संपूर्ण परिवार" : "All Branches" },
+            ...(gen1Members.length > 0
+              ? [
+                  {
+                    id: "roots",
+                    label:
+                      language === "hi"
+                        ? "दादा-दादी"
+                        : gen1Members.length >= 2
+                        ? `${tName(gen1Members[0].first_name)} & ${tName(gen1Members[1].first_name)}`
+                        : `${tName(gen1Members[0].first_name)}`,
+                  },
+                ]
+              : []),
+            ...branches.map((b, idx) => ({
+              id: b.id,
+              label: `${idx + 1}. ${tName(b.name)}${b.isLead ? (language === "hi" ? " (मुखिया)" : " (Lead)") : ""}`,
+            })),
           ].map((b) => {
             const isSelected = selectedBranchFilter === b.id;
             return (
               <button
                 key={b.id}
-                onClick={() =>
-                  handleBranchFilterClick(
-                    b.id as "all" | "roots" | "akhtar" | "shakur" | "sattar" | "mukhtar"
-                  )
-                }
+                onClick={() => handleBranchFilterClick(b.id)}
                 className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all cursor-pointer min-h-[34px] shadow-2xs border ${
                   isSelected
                     ? "bg-amber-900 text-white border-amber-950 shadow-xs"
                     : "bg-white/95 text-stone-700 hover:text-stone-900 border-stone-200/90 hover:bg-stone-100"
                 }`}
               >
-                {language === "hi" ? b.labelHi : b.labelEn}
+                {b.label}
               </button>
             );
           })}
@@ -728,13 +666,7 @@ export function FamilyTreeCanvas({
               <Compass className="w-3.5 h-3.5" />
               <span>{language === "hi" ? "त्वरित पहुंच" : "Jump to"}</span>
             </span>
-            {[
-              { id: "mohammad", name: "Mohammad" },
-              { id: "akhtar", name: "Akhtar" },
-              { id: "shakur", name: "Shakur" },
-              { id: "sattar", name: "Sattar" },
-              { id: "mukhtar", name: "Mukhtar" },
-            ].map((item) => (
+            {jumpItems.map((item) => (
               <button
                 key={item.id}
                 onClick={(e) => {
@@ -764,8 +696,8 @@ export function FamilyTreeCanvas({
                         ? "दादा-दादी"
                         : "Grandparents"
                       : tName(
-                          BRANCHES_STRUCTURE.find((b) => b.id === selectedBranchFilter)
-                            ?.name
+                          branches.find((b) => b.id === selectedBranchFilter)
+                            ?.name || ""
                         )}
                   </strong>
                 </span>
@@ -779,103 +711,74 @@ export function FamilyTreeCanvas({
             </div>
           )}
 
-          {/* Root Generation 1: Mohammad & Hamida */}
-          {(selectedBranchFilter === "all" || selectedBranchFilter === "roots") && (
+          {/* Root Generation 1: Grandparents */}
+          {(selectedBranchFilter === "all" || selectedBranchFilter === "roots") && gen1Members.length > 0 && (
             <div className="bg-stone-900 text-white rounded-3xl p-4 sm:p-5 shadow-xs">
               <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300/90 mb-3">
                 {language === "hi" ? "दादा-दादी (पीढ़ी 1)" : "Generation 1 — Grandparents"}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Mohammad */}
-                <button
-                  onClick={() => onSelectMember("mohammad")}
-                  className="p-3.5 rounded-2xl bg-stone-800/90 hover:bg-stone-800 text-left transition-all border border-stone-700/80 flex items-center justify-between cursor-pointer min-h-[64px]"
-                >
-                  <div className="flex items-center gap-3">
-                    {members.find((m) => m.id === "mohammad")?.photo_url ? (
-                      <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
-                        <img
-                          src={members.find((m) => m.id === "mohammad")!.photo_url!}
-                          alt=""
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                            const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
-                            if (fb) (fb as HTMLElement).style.display = "flex";
-                          }}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                        <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
-                          M
+                {gen1Members.map((m) => {
+                  const isMemorial = Boolean(m.is_deceased);
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => onSelectMember(m.id)}
+                      className="p-3.5 rounded-2xl bg-stone-800/90 hover:bg-stone-800 text-left transition-all border border-stone-700/80 flex items-center justify-between cursor-pointer min-h-[64px]"
+                    >
+                      <div className="flex items-center gap-3">
+                        {m.photo_url ? (
+                          <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                            <img
+                              src={m.photo_url}
+                              alt=""
+                              onError={(e) => {
+                                e.currentTarget.style.display = "none";
+                                const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                                if (fb) (fb as HTMLElement).style.display = "flex";
+                              }}
+                              className="w-12 h-12 rounded-full object-cover"
+                            />
+                            <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                              {m.first_name[0]}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
+                            {m.first_name[0]}
+                          </div>
+                        )}
+                        <div>
+                          <div className="font-bold text-base text-white">{tName(m.first_name)}</div>
+                          <div className={`text-xs ${isMemorial ? "text-amber-200/90" : "text-stone-300"}`}>
+                            {m.family_role
+                              ? tName(m.family_role)
+                              : m.gender === "female"
+                              ? (language === "hi" ? "दादीजी" : "Grandmother")
+                              : (language === "hi" ? "दादाजी" : "Grandfather")}
+                            {isMemorial && (language === "hi" ? " • 🕊️ स्मृति में" : " • 🕊️ In Memory")}
+                          </div>
                         </div>
                       </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
-                        M
-                      </div>
-                    )}
-                    <div>
-                      <div className="font-bold text-base text-white">{tName("Mohammad")}</div>
-                      <div className="text-xs text-amber-200/90">
-                        {language === "hi" ? "दादाजी • 🕊️ स्मृति में" : "Grandfather • 🕊️ In Memory"}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-amber-300 bg-stone-700/80 px-2.5 py-1 rounded-lg">
-                    {language === "hi" ? "देखें →" : "View →"}
-                  </span>
-                </button>
-
-                {/* Hamida */}
-                <button
-                  onClick={() => onSelectMember("hamida")}
-                  className="p-3.5 rounded-2xl bg-stone-800/90 hover:bg-stone-800 text-left transition-all border border-stone-700/80 flex items-center justify-between cursor-pointer min-h-[64px]"
-                >
-                  <div className="flex items-center gap-3">
-                    {members.find((m) => m.id === "hamida")?.photo_url ? (
-                      <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
-                        <img
-                          src={members.find((m) => m.id === "hamida")!.photo_url!}
-                          alt=""
-                          onError={(e) => {
-                            e.currentTarget.style.display = "none";
-                            const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
-                            if (fb) (fb as HTMLElement).style.display = "flex";
-                          }}
-                          className="w-12 h-12 rounded-full object-cover"
-                        />
-                        <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
-                          H
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
-                        H
-                      </div>
-                    )}
-                    <div>
-                      <div className="font-bold text-base text-white">{tName("Hamida")}</div>
-                      <div className="text-xs text-stone-300">
-                        {language === "hi" ? "दादीजी" : "Grandmother"}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-xs font-semibold text-amber-300 bg-stone-700/80 px-2.5 py-1 rounded-lg">
-                    {language === "hi" ? "देखें →" : "View →"}
-                  </span>
-                </button>
+                      <span className="text-xs font-semibold text-amber-300 bg-stone-700/80 px-2.5 py-1 rounded-lg">
+                        {language === "hi" ? "देखें →" : "View →"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          {/* Generation 2: The 4 Brothers Branches */}
+          {/* Generation 2: Family Branches */}
           {selectedBranchFilter !== "roots" && (
             <div className="space-y-3">
               <div className="text-xs font-bold uppercase tracking-wider text-stone-500 px-1">
-                {language === "hi" ? "पीढ़ी 2 — 4 भाई और परिवार" : "Generation 2 — The 4 Brothers & Families"}
+                {language === "hi" ? "पारिवारिक शाखाएं और उनके परिवार" : "Family Branches & Families"}
               </div>
 
-              {BRANCHES_STRUCTURE
+              {branches
                 .filter((branch) =>
                   selectedBranchFilter === "all" ? true : selectedBranchFilter === branch.id
                 )

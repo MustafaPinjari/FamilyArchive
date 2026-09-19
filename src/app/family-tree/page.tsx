@@ -49,7 +49,7 @@ export default async function FamilyTreePage() {
   return (
     <div className="h-screen flex flex-col bg-[#FAF7F2] text-[#1C1917] overflow-hidden">
       <Navbar initialUser={user} />
-      <TreePageClient layout={layout} members={members} />
+      <TreePageClient layout={layout} members={members} marriages={marriages} relationships={relationships} />
     </div>
   );
 }

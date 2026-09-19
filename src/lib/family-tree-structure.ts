@@ -74,13 +74,33 @@ export function buildFamilyHierarchy(
       .sort((a, b) => a.display_order - b.display_order);
   };
 
-  // Gen 2 Branch Heads (Akhtar, Shakur, Sattar, Mukhtar)
-  const branchHeads = ["akhtar", "shakur", "sattar", "mukhtar"];
+  // Dynamic Gen 2 Branch Heads: children of Gen 1 members, sorted by display_order
+  const gen1Members = members.filter((m) => m.generation === 1);
+  const gen1Ids = new Set(gen1Members.map((m) => m.id));
+
+  const branchHeadIds = new Set<string>();
+  for (const rel of relationships) {
+    if (rel.relationship_type === "child" && gen1Ids.has(rel.person_id)) {
+      branchHeadIds.add(rel.related_person_id);
+    }
+  }
+
+  // Fallback if no Gen 1 child relationships: members with generation === 2
+  if (branchHeadIds.size === 0) {
+    members
+      .filter((m) => m.generation === 2 && (m.is_family_lead || m.gender === "male"))
+      .forEach((m) => branchHeadIds.add(m.id));
+  }
+
+  const branchHeads = Array.from(branchHeadIds)
+    .map((id) => memberMap.get(id))
+    .filter((m): m is FamilyMember => Boolean(m))
+    .sort((a, b) => a.display_order - b.display_order);
+
   const branches: FamilyBranchNode[] = [];
 
-  for (const headId of branchHeads) {
-    const lead = memberMap.get(headId);
-    if (!lead) continue;
+  for (const lead of branchHeads) {
+    const headId = lead.id;
     const branchSpouse = findSpouse(headId);
     const parentIds = [headId, branchSpouse?.id].filter(Boolean) as string[];
 

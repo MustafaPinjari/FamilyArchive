@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Search,
   FileText,
@@ -21,9 +21,10 @@ import {
   Shield,
   Layers,
 } from "lucide-react";
-import { FamilyDocument, FamilyMember } from "@/types";
+import { FamilyDocument, FamilyMember, Marriage, Relationship } from "@/types";
 import { useLanguage } from "@/lib/i18n";
 import { Navbar } from "@/components/layout/Navbar";
+import { buildFamilyHierarchy } from "@/lib/family-tree-structure";
 
 interface BranchData {
   id: string;
@@ -40,117 +41,11 @@ interface BranchData {
   }[];
 }
 
-// Canonical Indian Family Lineage Structure
-const BRANCHES_DATA: BranchData[] = [
-  {
-    id: "akhtar",
-    name: "Akhtar",
-    nickname: "Bade Pappa",
-    role: "Eldest Brother • Family Lead",
-    isLead: true,
-    spouse: { id: "afroz", name: "Afroz" },
-    children: [
-      {
-        id: "naziya",
-        name: "Naziya",
-        spouse: { id: "azhar", name: "Azhar" },
-        children: [
-          { id: "atiqa", name: "Atiqa" },
-          { id: "maira", name: "Maira" },
-        ],
-      },
-      {
-        id: "mussavir",
-        name: "Mussavir",
-        spouse: { id: "saniya", name: "Saniya" },
-        children: [{ id: "yazdan", name: "Yazdan" }],
-      },
-      {
-        id: "arshiya",
-        name: "Arshiya",
-        spouse: { id: "sharukh", name: "Sharukh" },
-        children: [
-          { id: "kabir", name: "Kabir" },
-          { id: "umar", name: "Umar" },
-        ],
-      },
-    ],
-  },
-  {
-    id: "shakur",
-    name: "Shakur",
-    nickname: "Elder Uncle",
-    role: "Second Brother",
-    spouse: { id: "chinni", name: "Chinni" },
-    children: [
-      { id: "eram", name: "Eram" },
-      {
-        id: "saba",
-        name: "Saba",
-        spouse: { id: "farukh", name: "Farukh" },
-        children: [
-          { id: "zikra", name: "Zikra" },
-          { id: "aarish", name: "Aarish" },
-        ],
-      },
-      {
-        id: "sana",
-        name: "Sana",
-        spouse: { id: "altaf", name: "Altaf" },
-        children: [
-          { id: "alvina", name: "Alvina" },
-          { id: "alian", name: "Alian" },
-        ],
-      },
-      {
-        id: "tasmiya",
-        name: "Tasmiya",
-        spouse: { id: "tayyab", name: "Tayyab" },
-        children: [{ id: "azlan", name: "Azlan" }],
-      },
-    ],
-  },
-  {
-    id: "sattar",
-    name: "Sattar",
-    nickname: "Uncle",
-    role: "Third Brother",
-    spouse: { id: "guddi", name: "Guddi" },
-    children: [
-      {
-        id: "junaid",
-        name: "Junaid",
-        spouse: { id: "sufiya", name: "Sufiya" },
-        children: [{ id: "hamdan", name: "Hamdan" }],
-      },
-      {
-        id: "misbah",
-        name: "Misbah",
-        spouse: { id: "tanveer", name: "Tanveer" },
-        children: [{ id: "zoya", name: "Zoya" }],
-      },
-    ],
-  },
-  {
-    id: "mukhtar",
-    name: "Mukhtar",
-    nickname: "Father",
-    role: "Youngest Brother",
-    spouse: { id: "shabana", name: "Shabana" },
-    children: [
-      { id: "mustafa", name: "Mustafa" },
-      {
-        id: "sharmin",
-        name: "Sharmin",
-        spouse: { id: "sameer", name: "Sameer" },
-      },
-    ],
-  },
-];
-
 export default function FamilyHomePage() {
   const { language, t, tName } = useLanguage();
   const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [marriages, setMarriages] = useState<Marriage[]>([]);
+  const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [memberDocs, setMemberDocs] = useState<FamilyDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
@@ -173,9 +68,9 @@ export default function FamilyHomePage() {
   const [search, setSearch] = useState("");
 
   // Which branch is open (Progressive Disclosure)
-  const [openBranch, setOpenBranch] = useState<string | null>("akhtar");
+  const [openBranch, setOpenBranch] = useState<string | null>(null);
 
-  // Load family members
+  // Load family members, marriages, relationships from authoritative database
   useEffect(() => {
     fetch("/api/family-tree")
       .then((res) => (res.ok ? res.json() : null))
@@ -183,111 +78,75 @@ export default function FamilyHomePage() {
         if (data?.members && Array.isArray(data.members)) {
           setMembers(data.members);
         }
+        if (data?.marriages && Array.isArray(data.marriages)) {
+          setMarriages(data.marriages);
+        }
+        if (data?.relationships && Array.isArray(data.relationships)) {
+          setRelationships(data.relationships);
+        }
       })
       .catch((err) => console.error("Error loading family tree:", err));
   }, []);
 
-  // Open person profile & fetch documents (Resilient: never fails or stays silent)
+  // Compute branches dynamically from SQLite database
+  const dynamicBranches: BranchData[] = useMemo(() => {
+    const rawBranches = buildFamilyHierarchy(members, marriages, relationships);
+    return rawBranches.map((b) => ({
+      id: b.lead.id,
+      name: b.lead.first_name,
+      nickname: b.lead.nickname || undefined,
+      role: b.lead.family_role || (b.lead.is_family_lead ? "Family Lead" : "Branch Head"),
+      isLead: Boolean(b.lead.is_family_lead),
+      spouse: b.spouse ? { id: b.spouse.id, name: b.spouse.first_name } : undefined,
+      children: b.households.map((hh) => ({
+        id: hh.primary.id,
+        name: hh.primary.first_name,
+        spouse: hh.spouse ? { id: hh.spouse.id, name: hh.spouse.first_name } : undefined,
+        children: hh.children.map((c) => ({ id: c.id, name: c.first_name })),
+      })),
+    }));
+  }, [members, marriages, relationships]);
+
+  // Generation 1 root members
+  const gen1Members = useMemo(() => {
+    return members
+      .filter((m) => m.generation === 1)
+      .sort((a, b) => a.display_order - b.display_order);
+  }, [members]);
+
+  // Set default open branch once dynamic branches are resolved
+  useEffect(() => {
+    if (!openBranch && dynamicBranches.length > 0) {
+      setOpenBranch(dynamicBranches[0].id);
+    }
+  }, [dynamicBranches, openBranch]);
+
+  // Open person profile & fetch documents strictly from the SQLite database
   const handleOpenPerson = async (memberId: string) => {
     const targetId = memberId.toLowerCase().trim();
     let person = members.find((m) => m.id.toLowerCase() === targetId);
 
     if (!person) {
-      // Find in BRANCHES_DATA
-      for (const b of BRANCHES_DATA) {
-        if (b.id.toLowerCase() === targetId) {
-          person = {
-            id: b.id,
-            first_name: b.name,
-            last_name: "Pinjari",
-            nickname: b.nickname,
-            family_role: b.role,
-            is_family_lead: b.isLead ? 1 : 0,
-            gender: "male",
-            generation: 2,
-            is_deceased: 0,
-          } as unknown as FamilyMember;
-          break;
-        }
-        if (b.spouse && b.spouse.id.toLowerCase() === targetId) {
-          person = {
-            id: b.spouse.id,
-            first_name: b.spouse.name,
-            last_name: "Pinjari",
-            gender: "female",
-            generation: 2,
-            family_role: `${b.name}'s Wife`,
-            is_deceased: 0,
-          } as unknown as FamilyMember;
-          break;
-        }
-        for (const child of b.children) {
-          if (child.id.toLowerCase() === targetId) {
-            person = {
-              id: child.id,
-              first_name: child.name,
-              last_name: "Pinjari",
-              gender: "male",
-              generation: 3,
-              is_deceased: 0,
-            } as unknown as FamilyMember;
-            break;
-          }
-          if (child.spouse && child.spouse.id.toLowerCase() === targetId) {
-            person = {
-              id: child.spouse.id,
-              first_name: child.spouse.name,
-              last_name: "Pinjari",
-              gender: "female",
-              generation: 3,
-              is_deceased: 0,
-            } as unknown as FamilyMember;
-            break;
-          }
-          const gc = child.children?.find((g) => g.id.toLowerCase() === targetId);
-          if (gc) {
-            person = {
-              id: gc.id,
-              first_name: gc.name,
-              last_name: "Pinjari",
-              generation: 4,
-              is_deceased: 0,
-            } as unknown as FamilyMember;
-            break;
+      try {
+        const res = await fetch(`/api/members/${encodeURIComponent(targetId)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.person) {
+            person = json.person;
+            setMembers((prev) => {
+              const exists = prev.some((m) => m.id === json.person.id);
+              return exists ? prev.map((m) => (m.id === json.person.id ? json.person : m)) : [...prev, json.person];
+            });
           }
         }
-        if (person) break;
+      } catch (err) {
+        console.error("Error fetching member:", err);
       }
+    }
 
-      if (!person) {
-        if (targetId === "mohammad") {
-          person = {
-            id: "mohammad",
-            first_name: "Mohammad",
-            last_name: "Pinjari",
-            is_deceased: 1,
-            generation: 1,
-            family_role: "Grandfather",
-          } as unknown as FamilyMember;
-        } else if (targetId === "hamida") {
-          person = {
-            id: "hamida",
-            first_name: "Hamida",
-            last_name: "Pinjari",
-            is_deceased: 0,
-            generation: 1,
-            family_role: "Grandmother",
-          } as unknown as FamilyMember;
-        } else {
-          person = {
-            id: targetId,
-            first_name: targetId.charAt(0).toUpperCase() + targetId.slice(1),
-            last_name: "Pinjari",
-            generation: 2,
-            is_deceased: 0,
-          } as unknown as FamilyMember;
-        }
-      }
+    if (!person) {
+      console.warn(`Family member with id "${targetId}" not found in database.`);
+      return;
     }
 
     setSelectedMember(person);
@@ -300,45 +159,18 @@ export default function FamilyHomePage() {
 
     try {
       const res = await fetch(`/api/members/${encodeURIComponent(targetId)}`);
-      let serverDocs: FamilyDocument[] = [];
       if (res.ok) {
         const json = await res.json();
-        serverDocs = json.documents || [];
+        setMemberDocs(json.documents || []);
         if (json.person) {
           setSelectedMember(json.person);
-          setMembers((prev) => {
-            const exists = prev.some((m) => m.id === json.person.id);
-            return exists
-              ? prev.map((m) => (m.id === json.person.id ? json.person : m))
-              : [...prev, json.person];
-          });
         }
-      }
-
-      // Merge with localStorage cached docs so documents NEVER vanish on Vercel container refresh
-      try {
-        const localKey = `family_cached_docs_${targetId}`;
-        const localDocs: FamilyDocument[] = JSON.parse(localStorage.getItem(localKey) || "[]");
-        const combined = [...serverDocs];
-        for (const ld of localDocs) {
-          if (!combined.some((sd) => sd.id === ld.id)) {
-            combined.push(ld);
-          }
-        }
-        setMemberDocs(combined);
-      } catch {
-        setMemberDocs(serverDocs);
+      } else {
+        setMemberDocs([]);
       }
     } catch (err) {
       console.error("Error loading member documents:", err);
-      try {
-        const localDocs: FamilyDocument[] = JSON.parse(
-          localStorage.getItem(`family_cached_docs_${targetId}`) || "[]"
-        );
-        setMemberDocs(localDocs);
-      } catch {
-        setMemberDocs([]);
-      }
+      setMemberDocs([]);
     } finally {
       setLoadingDocs(false);
     }
@@ -440,13 +272,6 @@ export default function FamilyHomePage() {
       console.error("Delete doc error:", err);
     }
     setMemberDocs((prev) => prev.filter((d) => d.id !== docId));
-    if (selectedMember) {
-      try {
-        const key = `family_cached_docs_${selectedMember.id}`;
-        const existing: FamilyDocument[] = JSON.parse(localStorage.getItem(key) || "[]");
-        localStorage.setItem(key, JSON.stringify(existing.filter((d) => d.id !== docId)));
-      } catch {}
-    }
   };
 
   // Upload Document for Selected Member
@@ -480,20 +305,15 @@ export default function FamilyHomePage() {
       setUploadSuccess(true);
       setUploadFiles([]);
 
-      // Persist newly uploaded documents in localStorage cache so they never vanish on refresh
-      if (data.documents && data.documents.length > 0 && selectedMember) {
-        try {
-          const key = `family_cached_docs_${selectedMember.id}`;
-          const existing: FamilyDocument[] = JSON.parse(localStorage.getItem(key) || "[]");
-          const merged = [
-            ...data.documents,
-            ...existing.filter((d) => !data.documents.some((nd: any) => nd.id === d.id)),
-          ];
-          localStorage.setItem(key, JSON.stringify(merged));
-          setMemberDocs(merged);
-        } catch {}
-      } else {
-        // Fallback: Refresh person documents from server
+      // Update documents strictly from server response
+      if (data.documents && data.documents.length > 0) {
+        setMemberDocs((prev) => {
+          const newDocs = data.documents.filter(
+            (nd: FamilyDocument) => !prev.some((d) => d.id === nd.id)
+          );
+          return [...newDocs, ...prev];
+        });
+      } else if (selectedMember) {
         const docsRes = await fetch(`/api/members/${selectedMember.id}`);
         if (docsRes.ok) {
           const json = await docsRes.json();
@@ -738,98 +558,71 @@ export default function FamilyHomePage() {
               </div>
 
               {/* Generation 1: Grandparents (Dignified Memorial Design) */}
-              <div className="p-4 sm:p-5 rounded-3xl bg-stone-900 text-white shadow-xs">
-                <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300/90 mb-3">
-                  {language === "hi" ? "दादा-दादी (पीढ़ी 1)" : "Grandparents (Generation 1)"}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Mohammad (Deceased - Respectfully Honored) */}
-                  <button
-                    onClick={() => handleOpenPerson("mohammad")}
-                    className="p-3.5 rounded-2xl bg-stone-800/80 hover:bg-stone-800 text-left transition-all border border-stone-700/60 flex items-center justify-between cursor-pointer min-h-[64px]"
-                  >
-                    <div className="flex items-center gap-3">
-                      {members.find((m) => m.id === "mohammad")?.photo_url ? (
-                        <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
-                          <img
-                            src={members.find((m) => m.id === "mohammad")!.photo_url!}
-                            alt=""
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
-                              if (fb) (fb as HTMLElement).style.display = "flex";
-                            }}
-                            className="w-12 h-12 rounded-full object-cover"
-                          />
-                          <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
-                            M
+              {gen1Members.length > 0 && (
+                <div className="p-4 sm:p-5 rounded-3xl bg-stone-900 text-white shadow-xs">
+                  <div className="text-[11px] font-bold uppercase tracking-widest text-amber-300/90 mb-3">
+                    {language === "hi" ? "दादा-दादी (पीढ़ी 1)" : "Grandparents (Generation 1)"}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {gen1Members.map((m) => {
+                      const isMemorial = Boolean(m.is_deceased);
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => handleOpenPerson(m.id)}
+                          className="p-3.5 rounded-2xl bg-stone-800/80 hover:bg-stone-800 text-left transition-all border border-stone-700/60 flex items-center justify-between cursor-pointer min-h-[64px]"
+                        >
+                          <div className="flex items-center gap-3">
+                            {m.photo_url ? (
+                              <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
+                                <img
+                                  src={m.photo_url}
+                                  alt=""
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = "none";
+                                    const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
+                                    if (fb) (fb as HTMLElement).style.display = "flex";
+                                  }}
+                                  className="w-12 h-12 rounded-full object-cover"
+                                />
+                                <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
+                                  {m.first_name[0]}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
+                                {m.first_name[0]}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-bold text-base text-white">{tName(m.first_name)}</div>
+                              <div className={`text-xs ${isMemorial ? "text-amber-200/90" : "text-stone-300"}`}>
+                                {m.family_role
+                                  ? tName(m.family_role)
+                                  : m.gender === "female"
+                                  ? (language === "hi" ? "दादीजी" : "Grandmother")
+                                  : (language === "hi" ? "दादाजी" : "Grandfather")}
+                                {isMemorial && (language === "hi" ? " • 🕊️ स्मृति में" : " • 🕊️ In Memory")}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
-                          M
-                        </div>
-                      )}
-                      <div>
-                        <div className="font-bold text-base text-white">{tName("Mohammad")}</div>
-                        <div className="text-xs text-amber-200/90">
-                          {language === "hi" ? "दादाजी • 🕊️ स्मृति में" : "Grandfather • 🕊️ In Memory"}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-stone-400">
-                      {language === "hi" ? "दस्तावेज़ →" : "Docs →"}
-                    </span>
-                  </button>
-
-                  {/* Hamida (Grandmother) */}
-                  <button
-                    onClick={() => handleOpenPerson("hamida")}
-                    className="p-3.5 rounded-2xl bg-stone-800/80 hover:bg-stone-800 text-left transition-all border border-stone-700/60 flex items-center justify-between cursor-pointer min-h-[64px]"
-                  >
-                    <div className="flex items-center gap-3">
-                      {members.find((m) => m.id === "hamida")?.photo_url ? (
-                        <div className="relative w-12 h-12 rounded-full overflow-hidden border border-amber-300 flex-shrink-0">
-                          <img
-                            src={members.find((m) => m.id === "hamida")!.photo_url!}
-                            alt=""
-                            onError={(e) => {
-                              e.currentTarget.style.display = "none";
-                              const fb = e.currentTarget.parentElement?.querySelector(".avatar-fb");
-                              if (fb) (fb as HTMLElement).style.display = "flex";
-                            }}
-                            className="w-12 h-12 rounded-full object-cover"
-                          />
-                          <div className="avatar-fb hidden absolute inset-0 w-12 h-12 bg-stone-700 text-amber-200 font-serif font-bold text-lg items-center justify-center">
-                            H
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 rounded-full bg-stone-700 text-amber-200 font-serif font-bold text-lg flex items-center justify-center flex-shrink-0">
-                          H
-                        </div>
-                      )}
-                      <div>
-                        <div className="font-bold text-base text-white">{tName("Hamida")}</div>
-                        <div className="text-xs text-stone-300">
-                          {language === "hi" ? "दादीजी" : "Grandmother"}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-xs font-medium text-stone-400">
-                      {language === "hi" ? "दस्तावेज़ →" : "Docs →"}
-                    </span>
-                  </button>
+                          <span className="text-xs font-medium text-stone-400">
+                            {language === "hi" ? "दस्तावेज़ →" : "Docs →"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Generation 2: The 4 Brothers Branches */}
+              {/* Generation 2: Family Branches */}
               <div className="space-y-3 pt-2">
                 <div className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                  {language === "hi" ? "4 भाई और उनके परिवार" : "The 4 Brothers & Families"}
+                  {language === "hi" ? "पारिवारिक शाखाएं और उनके परिवार" : "Family Branches & Families"}
                 </div>
 
-                {BRANCHES_DATA.map((b, idx) => {
+                {dynamicBranches.map((b, idx) => {
                   const isOpen = openBranch === b.id;
                   const bMember = members.find((m) => m.id === b.id);
 

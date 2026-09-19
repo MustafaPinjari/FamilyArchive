@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-19T16:56:50.000Z",
+  "title": "Design System: Pinjari Heritage Archive",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Forest Emerald Green",
+        "canonical": "#0E382F",
+        "tonalRamp": [
+          "#04100D",
+          "#08201B",
+          "#0E382F",
+          "#1B5649",
+          "#287867",
+          "#4CA491",
+          "#8ED1C1",
+          "#D5F2EB"
+        ]
+      },
+      "accent-gold": {
+        "role": "secondary",
+        "displayName": "Antique Heritage Gold",
+        "canonical": "#C6A15B",
+        "tonalRamp": [
+          "#2D230D",
+          "#55431A",
+          "#8A6E2C",
+          "#C6A15B",
+          "#D8B46B",
+          "#E2C78A",
+          "#F1E2BF",
+          "#FAF5EA"
+        ]
+      },
+      "parchment-bg": {
+        "role": "neutral",
+        "displayName": "Warm Ivory Parchment",
+        "canonical": "#FAF7F0",
+        "tonalRamp": [
+          "#2C2820",
+          "#595244",
+          "#8E8472",
+          "#C8BFAE",
+          "#E8E3D7",
+          "#F5EFE4",
+          "#FAF7F0",
+          "#FFFFFF"
+        ]
+      },
+      "neutral-dark": {
+        "role": "neutral-dark",
+        "displayName": "Obsidian Archival Ink",
+        "canonical": "#171714",
+        "tonalRamp": [
+          "#000000",
+          "#0D0D0B",
+          "#171714",
+          "#2B2A25",
+          "#45433C",
+          "#68665E",
+          "#949187",
+          "#CBC8BF"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display Serif",
+        "purpose": "Hero marks, institution title PINJAR BADDA, and primary member names."
+      },
+      "headline": {
+        "displayName": "Headline Serif",
+        "purpose": "Section headings, modal headers, and kinship category banners."
+      },
+      "title": {
+        "displayName": "Title Serif",
+        "purpose": "Card titles, document labels, and elder names."
+      },
+      "body": {
+        "displayName": "Body Sans",
+        "purpose": "General interface text, biographies, and metadata values."
+      },
+      "label": {
+        "displayName": "Micro-Label",
+        "purpose": "Uppercase tracked kickers: BRANCH, ROLE, GENERATION, MEMBER SINCE."
+      }
+    },
+    "shadows": [
+      {
+        "name": "parchment-ambient",
+        "value": "0 2px 8px -2px rgba(23, 23, 20, 0.06)",
+        "purpose": "Subtle tactile rest for cards on ivory parchment canvas."
+      },
+      {
+        "name": "modal-deep",
+        "value": "0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)",
+        "purpose": "Grounded elevation for member profile drawers and ID card dialogs."
+      }
+    ],
+    "motion": [
+      {
+        "name": "flip-3d",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1) 700ms",
+        "purpose": "Smooth 3D rotation between Front and Back faces of the ID card."
+      },
+      {
+        "name": "tactile-lift",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1) 200ms",
+        "purpose": "Subtle hover lift on interactive cards and action pills."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Emerald Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Authoritative action button for PDF export, modal confirms, and vault opening.",
+      "html": "<button class=\"ds-btn-primary\"><svg class=\"ds-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"></path><polyline points=\"7 10 12 15 17 10\"></polyline><line x1=\"12\" y1=\"15\" x2=\"12\" y2=\"3\"></line></svg><span>DOWNLOAD COLOR PDF</span></button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background-color: #0E382F; color: #D8B46B; font-family: 'Cormorant Garamond', Georgia, serif; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; padding: 10px 20px; border-radius: 14px; border: 1px solid rgba(198, 161, 91, 0.35); cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 6px rgba(14, 56, 47, 0.2); } .ds-btn-primary:hover { background-color: #08241E; color: #E2C78A; border-color: #C6A15B; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(14, 56, 47, 0.3); } .ds-icon { width: 15px; height: 15px; }"
+    },
+    {
+      "name": "Heritage Gold Pill Badge",
+      "kind": "chip",
+      "refersTo": "badge-gold",
+      "description": "Identifies generational branches, family roles, and archival verification tags.",
+      "html": "<span class=\"ds-pill-gold\">PINJ-G2-AKHTAR</span>",
+      "css": ".ds-pill-gold { display: inline-flex; align-items: center; padding: 4px 12px; background-color: rgba(198, 161, 91, 0.12); color: #8A6E2C; border: 1px solid rgba(198, 161, 91, 0.4); border-radius: 9999px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; }"
+    },
+    {
+      "name": "Parchment Document Card",
+      "kind": "card",
+      "refersTo": "card-parchment",
+      "description": "Vault container for authenticated civil documents and identity proofs.",
+      "html": "<div class=\"ds-card-vault\"><div class=\"ds-card-header\"><span class=\"ds-card-tag\">AADHAAR CARD</span><span class=\"ds-card-status\">VERIFIED</span></div><h4 class=\"ds-card-title\">Akhtar Pinjari - National Identity</h4><p class=\"ds-card-meta\">Issued 2018 • PDF Document (2.4 MB)</p></div>",
+      "css": ".ds-card-vault { background-color: #FAF7F0; border: 1px solid rgba(198, 161, 91, 0.3); border-radius: 18px; padding: 18px; transition: transform 0.2s ease, border-color 0.2s ease; box-shadow: 0 2px 8px -2px rgba(23, 23, 20, 0.05); } .ds-card-vault:hover { transform: translateY(-2px); border-color: #C6A15B; box-shadow: 0 8px 16px -4px rgba(198, 161, 91, 0.15); } .ds-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; } .ds-card-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.16em; color: #8C7A63; text-transform: uppercase; } .ds-card-status { font-size: 8px; font-weight: 700; letter-spacing: 0.12em; color: #0E382F; background: rgba(14, 56, 47, 0.1); padding: 2px 8px; border-radius: 6px; } .ds-card-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 16px; font-weight: 700; color: #171714; margin: 0 0 4px 0; } .ds-card-meta { font-size: 11px; color: #78716C; margin: 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Living Ancestral Sanctuary",
+    "overview": "The Pinjari Heritage Archive is an illuminated digital heirloom crafted to preserve, celebrate, and authenticate the genealogical lineage of the Pinjari family. The interface evokes the enduring gravitas of royal Islamic heritage manuscripts, family crests, and archival ledgers, paired harmoniously with modern digital responsiveness, tactile micro-interactions, and cryptographic QR authentication.\n\nEvery surface is built around warm, heirloom ivory parchment (#FAF7F0), deep forest emerald green (#0E382F), and antique spun gold (#C6A15B). The experience conveys permanence, ancestral dignity, and deep familial unity ('Ek Khuda Ek Parivar').",
+    "keyCharacteristics": [
+      "Heirloom Parchment & Deep Emerald Tone: Tactile warmth that honors ancestral documents rather than sterile modern white dashboards.",
+      "Architectural Symmetry & Arabesque Flourish: Balanced geometric jali fretwork and golden hairlines framing authentic family portraits and legal records.",
+      "Sacred Archival Integrity: High-legibility serif and sans typography calibrated for family elders, legal verification, and mobile reading.",
+      "Print & Physical Immortality: Vector-solid backgrounds immune to browser print color stripping, ensuring digital ID cards print with 100% color saturation."
+    ],
+    "rules": [
+      {
+        "name": "The Gold Hairline Rule",
+        "body": "Gold borders and dividers are always hairline-thin (1px to 2px max). Gold is an illuminating accent of distinction, never a loud or heavy fill.",
+        "section": "colors"
+      },
+      {
+        "name": "The Vector Fill Rule",
+        "body": "Any major brand background (Forest Emerald #0E382F, Parchment #FAF7F0, Obsidian #171714) intended for print or export must be backed by an inline SVG vector <rect> to guarantee full color immunity against browser print engines.",
+        "section": "colors"
+      },
+      {
+        "name": "The Lineage Kicker Rule",
+        "body": "Every metadata field on an identity or kinship surface must be paired with an uppercase, wide-tracked micro-label (e.g., BRANCH: PINJ-G2-AKHTAR) in Warm Earth Umber (#8C7A63) positioned above the bold value.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tactile Rest Rule",
+        "body": "Cards and document items rest comfortably on the parchment plane. Hover effects use slight scale lifts (translateY(-2px)) and golden border shifts rather than intense color shifts.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve the sacred tri-color harmony: Deep Forest Green (#0E382F), Warm Ivory Parchment (#FAF7F0), and Spun Antique Gold (#C6A15B).",
+      "Do maintain authentic, verified data only (zero fake or demo placeholders).",
+      "Do back all printable colored surfaces with vector SVG <rect> elements so browser print engines never strip background colors.",
+      "Do provide bilingual transliterations (English & Hindi) for member names wherever available.",
+      "Do ensure QR codes link permanently to /documents?person=[id] with high error-correction level (Level H)."
+    ],
+    "donts": [
+      "Don't use neon, harsh primary colors, or generic flat blues/purples that undermine the historical dignity of the archive.",
+      "Don't use standard corporate SaaS dashboard patterns (stark white cards, cold gray borders, generic flat badges).",
+      "Don't truncate or summarize genealogical lineage without showing the direct descent from Patriarch Mohammad Pinjari.",
+      "Don't allow browser print styles to leak page navigation, background drawers, or action buttons onto identity card printouts."
+    ]
+  }
+}

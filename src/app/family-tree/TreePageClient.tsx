@@ -2,16 +2,18 @@
 
 import React, { useState } from "react";
 import { TreeLayoutResult } from "@/lib/tree-layout";
-import { FamilyMember } from "@/types";
+import { FamilyMember, Marriage, Relationship } from "@/types";
 import { FamilyTreeCanvas } from "@/components/family-tree/FamilyTreeCanvas";
 import { MemberProfileDrawer } from "@/components/members/MemberProfileDrawer";
 
 interface TreePageClientProps {
   layout: TreeLayoutResult;
   members: FamilyMember[];
+  marriages?: Marriage[];
+  relationships?: Relationship[];
 }
 
-export function TreePageClient({ layout, members }: TreePageClientProps) {
+export function TreePageClient({ layout, members, marriages = [], relationships = [] }: TreePageClientProps) {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
   return (
@@ -19,6 +21,8 @@ export function TreePageClient({ layout, members }: TreePageClientProps) {
       <FamilyTreeCanvas
         layout={layout}
         members={members}
+        marriages={marriages}
+        relationships={relationships}
         selectedMemberId={selectedMemberId}
         onSelectMember={(id) => setSelectedMemberId(id)}
       />
